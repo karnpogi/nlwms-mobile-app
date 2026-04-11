@@ -1,0 +1,49 @@
+# Flutter
+.dart_tool/
+.packages
+.pub-cache/
+build/
+.generated/
+
+# Flutter plugins
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Dart
+*.dart.js
+*.js_
+*.js.deps
+*.js.map
+
+# Android
+android/.gradle/
+android/local.properties
+android/key.properties
+android/app/*.jks
+**/android/**/google-services.json
+**/android/**/google-services.json.enc
+
+# iOS
+ios/Flutter/App.framework
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/.symlinks
+ios/Pods/
+ios/Runner/GeneratedPluginRegistrant.*
+ios/Runner.xcworkspace/
+
+# Xcode
+*.xcuserstate
+*.xcuserdata/
+*.xcworkspace
+*.ipa
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# System
+.DS_Store
+Thumbs.db
