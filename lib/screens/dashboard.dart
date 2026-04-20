@@ -28,6 +28,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   List<Task> _entries = [];
 
+  int _totalSubmissions = 0;
+  int _submittedCount = 0;
+  int _reviewedCount = 0;
+  int _returnedCount = 0;
+  int _verifiedCount = 0;
+  int _totalLogs = 0;
+
   String _userName = 'Library Staff';
   String _userRole = 'Library Staff';
   String _userSection = 'Assigned Section';
@@ -54,10 +61,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
           final role = decoded['role']?.toString().trim() ??
               decoded['user_role']?.toString().trim() ??
               'Library Staff';
-          final section = decoded['section']?.toString().trim() ??
-              decoded['section_name']?.toString().trim() ??
-              decoded['assigned_section']?.toString().trim() ??
-              'Assigned Section';
+
+          String section = 'Assigned Section';
+          final sectionValue = decoded['section'];
+
+          if (sectionValue is Map<String, dynamic>) {
+            section = sectionValue['name']?.toString().trim() ??
+                decoded['section_name']?.toString().trim() ??
+                decoded['assigned_section']?.toString().trim() ??
+                'Assigned Section';
+          } else {
+            section = decoded['section']?.toString().trim() ??
+                decoded['section_name']?.toString().trim() ??
+                decoded['assigned_section']?.toString().trim() ??
+                'Assigned Section';
+          }
 
           String resolvedName = 'Library Staff';
 
@@ -92,21 +110,111 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     try {
-      final entries = await widget.taskService.getTasks();
-      setState(() => _entries = entries);
+      final submissionsRes =
+          await widget.taskService.apiClient.get('/mobile/submissions');
+      final logsRes = await widget.taskService.apiClient.get('/mobile/logs');
+
+      if (submissionsRes.statusCode != 200) {
+        throw Exception(
+          'Failed to load submissions: ${submissionsRes.statusCode}',
+        );
+      }
+
+      if (logsRes.statusCode != 200) {
+        throw Exception(
+          'Failed to load logs: ${logsRes.statusCode}',
+        );
+      }
+
+      final submissionsDecoded = jsonDecode(submissionsRes.body);
+      final logsDecoded = jsonDecode(logsRes.body);
+
+      List<dynamic> submissions = [];
+      List<dynamic> logs = [];
+
+      if (submissionsDecoded is Map<String, dynamic> &&
+          submissionsDecoded['data'] is List) {
+        submissions = submissionsDecoded['data'] as List<dynamic>;
+      } else if (submissionsDecoded is List) {
+        submissions = submissionsDecoded;
+      }
+
+      if (logsDecoded is Map<String, dynamic> && logsDecoded['data'] is List) {
+        logs = logsDecoded['data'] as List<dynamic>;
+      } else if (logsDecoded is List) {
+        logs = logsDecoded;
+      }
+
+      final mappedLogs = logs
+          .whereType<Map>()
+          .map((e) => _mapLogToTask(Map<String, dynamic>.from(e)))
+          .toList();
+
+      if (!mounted) return;
+
+      setState(() {
+        _entries = mappedLogs;
+
+        _totalSubmissions = submissions.length;
+        _submittedCount = submissions.where((s) {
+          if (s is Map) {
+            return s['status']?.toString().toLowerCase() == 'submitted';
+          }
+          return false;
+        }).length;
+        _reviewedCount = submissions.where((s) {
+          if (s is Map) {
+            return s['status']?.toString().toLowerCase() == 'reviewed';
+          }
+          return false;
+        }).length;
+        _returnedCount = submissions.where((s) {
+          if (s is Map) {
+            return s['status']?.toString().toLowerCase() == 'returned';
+          }
+          return false;
+        }).length;
+        _verifiedCount = submissions.where((s) {
+          if (s is Map) {
+            return s['status']?.toString().toLowerCase() == 'verified';
+          }
+          return false;
+        }).length;
+
+        _totalLogs = logs.length;
+      });
     } catch (e) {
+      if (!mounted) return;
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  int get _loggedThisWeek => _entries.length;
-  int get _verifiedCount => _entries.where((e) => e.status == 'done').length;
-  int get _underReviewCount =>
-      _entries.where((e) => e.status == 'in_progress').length;
-  int get _needsRevisionCount =>
-      _entries.where((e) => e.status == 'pending').length;
+  Task _mapLogToTask(Map<String, dynamic> log) {
+    final activityDate = log['activity_date']?.toString();
+    final createdAt = log['created_at']?.toString();
+
+    return Task(
+      id: _toInt(log['id']),
+      userId: null,
+      title: log['duty_title']?.toString() ?? 'Untitled Log',
+      description: log['remarks']?.toString(),
+      status: log['status']?.toString().toLowerCase() ?? 'draft',
+      priority: null,
+      coverColor: null,
+      dueDate: activityDate != null ? DateTime.tryParse(activityDate) : null,
+      createdAt: createdAt != null ? DateTime.tryParse(createdAt) : null,
+      updatedAt: null,
+    );
+  }
+
+  int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString()) ?? 0;
+  }
 
   List<Task> get _recentFeedbackEntries => _entries.take(2).toList();
 
@@ -129,26 +237,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   String _feedbackStatusLabel(String status) {
-    switch (status) {
-      case 'done':
+    switch (status.toLowerCase()) {
+      case 'verified':
         return 'Verified';
-      case 'in_progress':
-        return 'Under Review';
-      case 'pending':
+      case 'reviewed':
+        return 'Reviewed';
+      case 'submitted':
+        return 'Submitted';
+      case 'returned':
+        return 'Returned';
+      case 'draft':
       default:
-        return 'Needs Revision';
+        return 'Draft';
     }
   }
 
   Color _feedbackStatusColor(String status) {
-    switch (status) {
-      case 'done':
+    switch (status.toLowerCase()) {
+      case 'verified':
         return Colors.green;
-      case 'in_progress':
+      case 'reviewed':
+        return Colors.amber.shade700;
+      case 'submitted':
+        return Colors.blue;
+      case 'returned':
         return Colors.orange;
-      case 'pending':
+      case 'draft':
       default:
-        return Colors.redAccent;
+        return Colors.grey;
     }
   }
 
@@ -195,7 +311,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => const WeeklyARScreen(),
+            builder: (_) => WeeklyARScreen(taskService: widget.taskService  
+            ),
           ),
         );
       },
@@ -512,9 +629,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             _buildStatCard(
               context: context,
-              label: 'Logged This Week',
-              value: _loggedThisWeek,
+              label: 'Total Submissions',
+              value: _totalSubmissions,
               valueColor: Colors.blue,
+            ),
+            _buildStatCard(
+              context: context,
+              label: 'Submitted',
+              value: _submittedCount,
+              valueColor: Colors.blueAccent,
+            ),
+            _buildStatCard(
+              context: context,
+              label: 'Reviewed',
+              value: _reviewedCount,
+              valueColor: Colors.amber.shade700,
+            ),
+            _buildStatCard(
+              context: context,
+              label: 'Returned',
+              value: _returnedCount,
+              valueColor: Colors.orange,
             ),
             _buildStatCard(
               context: context,
@@ -524,15 +659,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             _buildStatCard(
               context: context,
-              label: 'Under Review',
-              value: _underReviewCount,
-              valueColor: Colors.blueGrey,
-            ),
-            _buildStatCard(
-              context: context,
-              label: 'Needs Revision',
-              value: _needsRevisionCount,
-              valueColor: Colors.orange,
+              label: 'Total Logs',
+              value: _totalLogs,
+              valueColor: Colors.deepPurple,
             ),
           ],
         ),
@@ -581,7 +710,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const WeeklyARScreen(),
+                    builder: (_) => WeeklyARScreen(taskService: widget.taskService  
+                    ),
                   ),
                 );
               },

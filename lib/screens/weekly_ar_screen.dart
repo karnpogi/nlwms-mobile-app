@@ -1,68 +1,154 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../services/task_service.dart';
 
 class WeeklyARScreen extends StatefulWidget {
-  const WeeklyARScreen({super.key});
+  final TaskService taskService;
+
+  const WeeklyARScreen({
+    super.key,
+    required this.taskService,
+  });
 
   @override
   State<WeeklyARScreen> createState() => _WeeklyARScreenState();
 }
 
 class _WeeklyARScreenState extends State<WeeklyARScreen> {
+  bool _isLoading = true;
   bool _isSubmitting = false;
 
-  final List<WeeklyAREntry> _entries = const [
-    WeeklyAREntry(
-      title: 'Shelving Books',
-      dateLabel: 'March 14',
-      outputValue: '52',
-      outputUnit: 'books',
-      hasProof: false,
-    ),
-    WeeklyAREntry(
-      title: 'Monitoring Borrowed Books',
-      dateLabel: 'March 14',
-      outputValue: '35',
-      outputUnit: 'transactions',
-      hasProof: false,
-    ),
-    WeeklyAREntry(
-      title: 'Utilization Counting',
-      dateLabel: 'March 13',
-      outputValue: '145',
-      outputUnit: 'visitors',
-      hasProof: true,
-    ),
-    WeeklyAREntry(
-      title: 'Research Assistance',
-      dateLabel: 'March 13',
-      outputValue: '8',
-      outputUnit: 'queries',
-      hasProof: false,
-    ),
-    WeeklyAREntry(
-      title: 'Shelving Books',
-      dateLabel: 'March 12',
-      outputValue: '48',
-      outputUnit: 'books',
-      hasProof: false,
-    ),
-    WeeklyAREntry(
-      title: 'Monitoring Borrowed Books',
-      dateLabel: 'March 12',
-      outputValue: '42',
-      outputUnit: 'transactions',
-      hasProof: false,
-    ),
-  ];
+  String _submissionStatus = 'Draft';
+  String _submissionStatusText = 'Not yet submitted';
+  String _reportingWeekLabel = '';
 
-  int get _totalEntries => _entries.length;
+  List<Map<String, dynamic>> _days = [];
 
-  int get _totalOutput {
-    int total = 0;
-    for (final entry in _entries) {
-      total += int.tryParse(entry.outputValue) ?? 0;
+  DateTime get _today => DateTime.now();
+
+  DateTime get _weekStart {
+    final now = _today;
+    final weekday = now.weekday;
+    return DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: weekday - 1));
+  }
+
+  DateTime get _weekEnd => _weekStart.add(const Duration(days: 4));
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWeeklyReport();
+  }
+
+  Future<void> _loadWeeklyReport() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await widget.taskService.apiClient.get(
+        '/mobile/weekly-report',
+      );
+
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } catch (_) {
+        decoded = null;
+      }
+
+      if (response.statusCode == 200 && decoded is Map<String, dynamic>) {
+        final weekStart = decoded['week_start']?.toString();
+        final weekEnd = decoded['week_end']?.toString();
+        final submission = decoded['submission'];
+        final rawDays = decoded['days'];
+
+        String reportingWeek = '';
+        if (weekStart != null && weekEnd != null) {
+          final start = DateTime.tryParse(weekStart);
+          final end = DateTime.tryParse(weekEnd);
+          if (start != null && end != null) {
+            reportingWeek = '${_formatDate(start)} - ${_formatDate(end)}';
+          }
+        }
+
+        String status = 'Draft';
+        String statusText = 'Not yet submitted';
+
+        if (submission is Map<String, dynamic>) {
+          final rawStatus = submission['status']?.toString().trim();
+          if (rawStatus != null && rawStatus.isNotEmpty) {
+            status = rawStatus[0].toUpperCase() + rawStatus.substring(1);
+          }
+
+          switch (rawStatus) {
+            case 'submitted':
+              statusText = 'Submitted for Unit Head review';
+              break;
+            case 'reviewed':
+              statusText = 'Reviewed by Unit Head';
+              break;
+            case 'returned':
+              statusText = 'Returned for revision';
+              break;
+            case 'verified':
+              statusText = 'Verified by Head Librarian';
+              break;
+            default:
+              statusText = 'Not yet submitted';
+          }
+        }
+
+        final days = <Map<String, dynamic>>[];
+        if (rawDays is List) {
+          for (final item in rawDays) {
+            if (item is Map<String, dynamic>) {
+              days.add(item);
+            }
+          }
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _reportingWeekLabel = reportingWeek;
+          _submissionStatus = status;
+          _submissionStatusText = statusText;
+          _days = days;
+        });
+      } else {
+        throw Exception('Failed to load weekly report: ${response.statusCode}');
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load weekly report: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
-    return total;
   }
 
   Future<void> _submitWeeklyAR() async {
@@ -71,23 +157,59 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      await Future.delayed(const Duration(milliseconds: 900));
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Weekly accomplishment report submitted successfully.'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      final response = await widget.taskService.apiClient.post(
+        '/mobile/submissions',
+        {
+          'week_start': _weekStart.toIso8601String().split('T').first,
+          'week_end': _weekEnd.toIso8601String().split('T').first,
+        },
       );
+
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } catch (_) {
+        decoded = null;
+      }
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if (!mounted) return;
+
+        final message = decoded is Map<String, dynamic> &&
+                decoded['message'] != null
+            ? decoded['message'].toString()
+            : 'Weekly accomplishment report submitted successfully.';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+
+        await _loadWeeklyReport();
+        return;
+      }
+
+      String errorMessage = 'Submission failed';
+
+      if (decoded is Map<String, dynamic>) {
+        if (decoded['message'] != null) {
+          errorMessage = decoded['message'].toString();
+        } else if (decoded['errors'] is Map && decoded['errors'].isNotEmpty) {
+          final firstError = decoded['errors'].values.first;
+          if (firstError is List && firstError.isNotEmpty) {
+            errorMessage = firstError.first.toString();
+          } else {
+            errorMessage = firstError.toString();
+          }
+        }
+      }
+
+      throw Exception(errorMessage);
     } catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to submit weekly report: $e'),
-          behavior: SnackBarBehavior.floating,
         ),
       );
     } finally {
@@ -97,93 +219,118 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
     }
   }
 
+  Widget _buildDayCard(Map<String, dynamic> day) {
+    final dayLabel = day['day_label']?.toString() ?? 'Day';
+    final logs = (day['logs'] as List?) ?? [];
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              dayLabel,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (logs.isEmpty)
+              const Text(
+                'No logged accomplishments',
+                style: TextStyle(color: Colors.grey),
+              )
+            else
+              ...logs.map((log) {
+                final item = log as Map<String, dynamic>;
+                final title =
+                    item['duty_template']?['title']?.toString() ?? 'Untitled duty';
+                final quantity = item['quantity']?.toString() ?? '0';
+                final remarks = item['remarks']?.toString() ?? '';
+
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.grey.shade100,
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 6),
+                      Text('Qty: $quantity'),
+                      if (remarks.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text('Remarks: $remarks'),
+                      ],
+                    ],
+                  ),
+                );
+              }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-
-    final surfaceCard = cs.surface;
-    final mutedCard = cs.surfaceVariant.withOpacity(isDark ? 0.25 : 0.45);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Weekly AR'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Weekly Accomplishment Report',
-                      style: theme.textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Compile and submit your weekly accomplishment entries',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 18),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadWeeklyReport,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text(
+                    'Weekly Accomplishment Report',
+                    style: theme.textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Compile and submit your weekly accomplishment entries',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 16),
 
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: surfaceCard,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: cs.outlineVariant.withOpacity(0.35),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                            color: Colors.black.withOpacity(
-                              isDark ? 0.10 : 0.05,
-                            ),
-                          ),
-                        ],
-                      ),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
                       child: Row(
                         children: [
-                          Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: mutedCard,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(Icons.calendar_month_outlined),
-                          ),
+                          const Icon(Icons.calendar_today_outlined),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
+                                const Text(
                                   'Reporting Week',
-                                  style: theme.textTheme.labelMedium?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                    fontWeight: FontWeight.w700,
-                                  ),
+                                  style: TextStyle(fontWeight: FontWeight.w600),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  'March 10 - March 14, 2026',
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
+                                  _reportingWeekLabel.isEmpty
+                                      ? '${_formatDate(_weekStart)} - ${_formatDate(_weekEnd)}'
+                                      : _reportingWeekLabel,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ],
@@ -192,307 +339,79 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                         ],
                       ),
                     ),
+                  ),
 
-                    const SizedBox(height: 14),
+                  const SizedBox(height: 12),
 
-                    Container(
-                      width: double.infinity,
+                  Card(
+                    child: Padding(
                       padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: surfaceCard,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: cs.outlineVariant.withOpacity(0.35),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                            color: Colors.black.withOpacity(
-                              isDark ? 0.10 : 0.05,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Status',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(_submissionStatus),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _SummaryStat(
-                                  label: 'Total Entries',
-                                  value: _totalEntries.toString(),
-                                  alignment: CrossAxisAlignment.start,
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                const Text(
+                                  'Details',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
                                 ),
-                              ),
-                              Expanded(
-                                child: _SummaryStat(
-                                  label: 'Total Output',
-                                  value: _totalOutput.toString(),
-                                  alignment: CrossAxisAlignment.end,
+                                const SizedBox(height: 4),
+                                Text(
+                                  _submissionStatusText,
                                   textAlign: TextAlign.right,
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: cs.surfaceVariant,
-                                  borderRadius: BorderRadius.circular(999),
-                                  border: Border.all(
-                                    color: cs.outlineVariant.withOpacity(0.25),
-                                  ),
-                                ),
-                                child: Text(
-                                  'Draft',
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'Not yet submitted',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Review your entries below, then submit for Unit Head review.',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: cs.onSurfaceVariant,
-                                height: 1.35,
-                              ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
-
-                    const SizedBox(height: 16),
-
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.description_outlined,
-                          size: 18,
-                          color: cs.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Review flow: You → Unit Head → Head Librarian',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 14),
-
-                    ..._entries.map(
-                      (entry) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _WeeklyEntryCard(entry: entry),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: FilledButton(
-                  onPressed: _isSubmitting ? null : _submitWeeklyAR,
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Submit Weekly AR'),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SummaryStat extends StatelessWidget {
-  final String label;
-  final String value;
-  final CrossAxisAlignment alignment;
-  final TextAlign textAlign;
-
-  const _SummaryStat({
-    required this.label,
-    required this.value,
-    required this.alignment,
-    this.textAlign = TextAlign.left,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-
-    return Column(
-      crossAxisAlignment: alignment,
-      children: [
-        Text(
-          label,
-          textAlign: textAlign,
-          style: theme.textTheme.labelMedium?.copyWith(
-            color: cs.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          textAlign: textAlign,
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _WeeklyEntryCard extends StatelessWidget {
-  final WeeklyAREntry entry;
-
-  const _WeeklyEntryCard({
-    required this.entry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: cs.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: cs.outlineVariant.withOpacity(0.35),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.title,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
                   ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Text(
-                      entry.dateLabel,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
+
+                  const SizedBox(height: 16),
+
+                  const Text(
+                    'Review flow: You → Unit Head → Head Librarian',
+                    style: TextStyle(fontWeight: FontWeight.w500),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  ..._days.map(_buildDayCard),
+
+                  const SizedBox(height: 8),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: _isSubmitting ? null : _submitWeeklyAR,
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Submit Weekly AR'),
                     ),
-                    if (entry.hasProof) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        '• Proof',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              RichText(
-                text: TextSpan(
-                  style: theme.textTheme.bodyMedium,
-                  children: [
-                    TextSpan(
-                      text: entry.outputValue,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: cs.onSurface,
-                      ),
-                    ),
-                    TextSpan(
-                      text: ' ${entry.outputUnit}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 6),
-              Icon(
-                Icons.edit_outlined,
-                size: 16,
-                color: cs.onSurfaceVariant,
-              ),
-            ],
-          ),
-        ],
-      ),
     );
   }
-}
-
-class WeeklyAREntry {
-  final String title;
-  final String dateLabel;
-  final String outputValue;
-  final String outputUnit;
-  final bool hasProof;
-
-  const WeeklyAREntry({
-    required this.title,
-    required this.dateLabel,
-    required this.outputValue,
-    required this.outputUnit,
-    this.hasProof = false,
-  });
 }

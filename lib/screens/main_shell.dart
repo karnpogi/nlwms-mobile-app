@@ -69,8 +69,10 @@ class _MainShellState extends State<MainShell> {
       _ShellMenuItem(
         title: 'Weekly AR',
         icon: Icons.assignment_turned_in_outlined,
-        screenBuilder: () => const WeeklyARScreen(),
-      ),
+        screenBuilder: () => WeeklyARScreen(
+            taskService: _taskService,
+        ),      
+        ),
       _ShellMenuItem(
         title: 'Settings',
         icon: Icons.settings_outlined,

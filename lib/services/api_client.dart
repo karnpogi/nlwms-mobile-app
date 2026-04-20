@@ -9,71 +9,115 @@ class ApiClient {
 
   ApiClient({required this.baseUrl});
 
-  Future<String?> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('auth_token');
+  Uri _uri(String endpoint) {
+    final normalizedBaseUrl = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
+
+    final normalizedEndpoint = endpoint.startsWith('/')
+        ? endpoint
+        : '/$endpoint';
+
+    return Uri.parse('$normalizedBaseUrl$normalizedEndpoint');
   }
 
-  Future<Map<String, String>> _headers({bool json = true}) async {
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final token = prefs.getString('auth_token');
+    if (token != null && token.trim().isNotEmpty) {
+      return token.trim();
+    }
+
+    return null;
+  }
+
+  Future<Map<String, String>> _jsonHeaders() async {
     final token = await _getToken();
 
     return {
       'Accept': 'application/json',
-      if (json) 'Content-Type': 'application/json',
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
     };
   }
 
-  Uri _uri(String path) => Uri.parse('$baseUrl$path');
+  Future<Map<String, String>> _multipartHeaders() async {
+    final token = await _getToken();
 
-  Future<http.Response> get(String path) async {
-    return http.get(_uri(path), headers: await _headers(json: false));
+    return {
+      'Accept': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
   }
 
-  Future<http.Response> post(String path, Map<String, dynamic> data) async {
+  Future<http.Response> get(String endpoint) async {
+    return http.get(
+      _uri(endpoint),
+      headers: await _jsonHeaders(),
+    );
+  }
+
+  Future<http.Response> post(
+    String endpoint, [
+    Map<String, dynamic>? body,
+  ]) async {
     return http.post(
-      _uri(path),
-      headers: await _headers(),
-      body: jsonEncode(data),
+      _uri(endpoint),
+      headers: await _jsonHeaders(),
+      body: jsonEncode(body ?? {}),
     );
   }
 
-  Future<http.Response> put(String path, Map<String, dynamic> data) async {
+  Future<http.Response> put(
+    String endpoint, [
+    Map<String, dynamic>? body,
+  ]) async {
     return http.put(
-      _uri(path),
-      headers: await _headers(),
-      body: jsonEncode(data),
+      _uri(endpoint),
+      headers: await _jsonHeaders(),
+      body: jsonEncode(body ?? {}),
     );
   }
 
-  Future<http.Response> patch(String path, Map<String, dynamic> data) async {
+  Future<http.Response> patch(
+    String endpoint, [
+    Map<String, dynamic>? body,
+  ]) async {
     return http.patch(
-      _uri(path),
-      headers: await _headers(),
-      body: jsonEncode(data),
+      _uri(endpoint),
+      headers: await _jsonHeaders(),
+      body: jsonEncode(body ?? {}),
     );
   }
 
-  Future<http.Response> delete(String path) async {
-    return http.delete(_uri(path), headers: await _headers(json: false));
+  Future<http.Response> delete(
+    String endpoint, [
+    Map<String, dynamic>? body,
+  ]) async {
+    return http.delete(
+      _uri(endpoint),
+      headers: await _jsonHeaders(),
+      body: body == null ? null : jsonEncode(body),
+    );
   }
 
-  // ============================
-  // NEW: Multipart upload (avatar)
-  // ============================
+  Future<http.Response> deleteAuth(String endpoint) async {
+    return http.delete(
+      _uri(endpoint),
+      headers: await _jsonHeaders(),
+    );
+  }
+
   Future<http.Response> postMultipart(
-    String path, {
+    String endpoint, {
     required String fileField,
     required File file,
     Map<String, String>? fields,
   }) async {
-    final token = await _getToken();
-    final request = http.MultipartRequest('POST', _uri(path));
+    final request = http.MultipartRequest('POST', _uri(endpoint));
 
-    request.headers['Accept'] = 'application/json';
-    if (token != null && token.isNotEmpty) {
-      request.headers['Authorization'] = 'Bearer $token';
-    }
+    request.headers.addAll(await _multipartHeaders());
 
     if (fields != null && fields.isNotEmpty) {
       request.fields.addAll(fields);
@@ -83,12 +127,7 @@ class ApiClient {
       await http.MultipartFile.fromPath(fileField, file.path),
     );
 
-    final streamed = await request.send();
-    return http.Response.fromStream(streamed);
-  }
-
-  // Some backends require DELETE with auth headers (yours does)
-  Future<http.Response> deleteAuth(String path) async {
-    return http.delete(_uri(path), headers: await _headers(json: false));
+    final streamedResponse = await request.send();
+    return http.Response.fromStream(streamedResponse);
   }
 }

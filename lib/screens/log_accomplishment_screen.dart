@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
+import '../services/api_client.dart';
 
 class LogAccomplishmentScreen extends StatefulWidget {
   final Map<String, dynamic>? duty;
@@ -23,6 +26,8 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
   late final TextEditingController _frequencyCtrl;
   final TextEditingController _quantityCtrl = TextEditingController();
   final TextEditingController _remarksCtrl = TextEditingController();
+
+  final ApiClient _apiClient = ApiClient(baseUrl: 'http://10.0.2.2:8000/api');
 
   DateTime _activityDate = DateTime.now();
   File? _proofFile;
@@ -72,6 +77,12 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     ];
 
     return '${monthNames[date.month]} ${date.day}, ${date.year}';
+  }
+
+  String _formatApiDate(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
   }
 
   Future<void> _pickDate() async {
@@ -131,16 +142,72 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     setState(() => _proofFile = null);
   }
 
-  Map<String, dynamic> _buildPayload(String status) {
+  Map<String, dynamic> _buildPayload() {
     return {
-      'duty_title': _dutyTitleCtrl.text.trim(),
-      'frequency': _frequencyCtrl.text.trim(),
-      'activity_date': _activityDate.toIso8601String(),
+      'duty_template_id': widget.duty?['id'],
+      'activity_date': _formatApiDate(_activityDate),
       'quantity': int.tryParse(_quantityCtrl.text.trim()) ?? 0,
-      'remarks': _remarksCtrl.text.trim(),
-      'proof_file_path': _proofFile?.path,
-      'status': status,
+      'remarks': _remarksCtrl.text.trim().isEmpty
+          ? null
+          : _remarksCtrl.text.trim(),
     };
+  }
+
+  String _extractErrorMessage(String responseBody, int statusCode) {
+    try {
+      final decoded = jsonDecode(responseBody);
+
+      if (decoded is Map<String, dynamic>) {
+        final message = decoded['message']?.toString();
+        if (message != null && message.isNotEmpty) {
+          return message;
+        }
+
+        final errors = decoded['errors'];
+        if (errors is Map) {
+          for (final value in errors.values) {
+            if (value is List && value.isNotEmpty) {
+              return value.first.toString();
+            }
+            if (value is String && value.isNotEmpty) {
+              return value;
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // ignore parsing failure and use fallback below
+    }
+
+    return 'Request failed ($statusCode).';
+  }
+
+  Future<Map<String, dynamic>?> _createLog() async {
+    if (!_formKey.currentState!.validate()) return null;
+
+    if (widget.duty?['id'] == null) {
+      throw Exception('No duty selected.');
+    }
+
+    final response = await _apiClient.post('/mobile/logs', _buildPayload());
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          final data = decoded['data'];
+          if (data is Map<String, dynamic>) {
+            return data;
+          }
+        }
+      } catch (_) {
+        // if response parsing fails, still treat as success
+      }
+
+      return _buildPayload();
+    }
+
+    throw Exception(_extractErrorMessage(response.body, response.statusCode));
   }
 
   Future<void> _saveDraft() async {
@@ -149,9 +216,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     setState(() => _savingDraft = true);
 
     try {
-      final payload = _buildPayload('draft');
-
-      await Future.delayed(const Duration(milliseconds: 700));
+      final createdLog = await _createLog();
 
       if (!mounted) return;
 
@@ -162,7 +227,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
         ),
       );
 
-      Navigator.pop(context, payload);
+      Navigator.pop(context, createdLog);
     } catch (e) {
       if (!mounted) return;
 
@@ -183,9 +248,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     setState(() => _submitting = true);
 
     try {
-      final payload = _buildPayload('submitted');
-
-      await Future.delayed(const Duration(milliseconds: 900));
+      final createdLog = await _createLog();
 
       if (!mounted) return;
 
@@ -196,7 +259,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
         ),
       );
 
-      Navigator.pop(context, payload);
+      Navigator.pop(context, createdLog);
     } catch (e) {
       if (!mounted) return;
 
@@ -420,6 +483,13 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                       Text(
                         'Attach a photo or screenshot if required for this duty.',
                         style: theme.textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Proof upload is not yet connected to the current mobile log API.',
+                        style: theme.textTheme.bodySmall?.copyWith(
                           color: cs.onSurfaceVariant,
                         ),
                       ),

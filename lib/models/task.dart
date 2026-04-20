@@ -1,31 +1,14 @@
-// task.dart
-import 'task_comment.dart';
-
-// NOTE: Subtasks disabled for now – no Subtask import.
-// import 'subtask.dart';
-
 class Task {
   final int id;
   final int? userId;
   final String title;
   final String? description;
-
-  /// 'pending', 'in_progress', 'done'
   final String status;
-
-  /// 'Low', 'Medium', 'High' (UI label; backend may send lowercased too)
   final String? priority;
-
-  /// Hex like "#1e40af" / "#111827" (nullable)
-  /// Backend key: cover_color
   final String? coverColor;
-
   final DateTime? dueDate;
   final DateTime? createdAt;
   final DateTime? updatedAt;
-
-  /// ✅ Single source of truth: task_comments table → returned as "comments"
-  final List<TaskComment> comments;
 
   Task({
     required this.id,
@@ -38,10 +21,7 @@ class Task {
     this.dueDate,
     this.createdAt,
     this.updatedAt,
-    List<TaskComment>? comments,
-  }) : comments = comments ?? const [];
-
-  int get commentsCount => comments.length;
+  });
 
   static int _toInt(dynamic v) {
     if (v == null) return 0;
@@ -64,60 +44,71 @@ class Task {
     return v.toString();
   }
 
-  /// Handles:
-  /// - comments: [ ... ]
-  /// - task_comments: [ ... ] (if older API)
-  /// - comments: { data: [ ... ] } (if paginated resource)
-  static List<TaskComment> _parseComments(dynamic raw) {
-    if (raw == null) return const [];
+  static String _normalizeStatus(dynamic rawStatus) {
+    final status = _toStr(rawStatus, fallback: 'pending').toLowerCase().trim();
 
-    // paginated style: { data: [...] }
-    if (raw is Map && raw['data'] is List) {
-      raw = raw['data'];
+    switch (status) {
+      case 'verified':
+      case 'approved':
+      case 'done':
+        return 'done';
+
+      case 'submitted':
+      case 'under_review':
+      case 'in_review':
+      case 'review':
+      case 'in_progress':
+        return 'in_progress';
+
+      case 'returned':
+      case 'needs_revision':
+      case 'revision':
+      case 'pending':
+      case 'draft':
+      default:
+        return 'pending';
     }
-
-    if (raw is List) {
-      final out = <TaskComment>[];
-      for (final e in raw) {
-        if (e is Map<String, dynamic>) {
-          out.add(TaskComment.fromJson(e));
-        } else if (e is Map) {
-          out.add(TaskComment.fromJson(Map<String, dynamic>.from(e)));
-        }
-      }
-      return out;
-    }
-
-    return const [];
   }
 
   factory Task.fromJson(Map<String, dynamic> json) {
-    final dynamic rawComments =
-        json.containsKey('comments') ? json['comments'] : json['task_comments'];
+    final dynamic dutyTemplate = json['duty_template'];
+    final dynamic titleFromRelation = dutyTemplate is Map<String, dynamic>
+        ? dutyTemplate['title']
+        : null;
+
+    final dynamic descriptionFromRelation = dutyTemplate is Map<String, dynamic>
+        ? dutyTemplate['description']
+        : null;
+
+    final dynamic remarks = json['remarks'];
 
     return Task(
       id: _toInt(json['id']),
       userId: json['user_id'] == null ? null : _toInt(json['user_id']),
-      title: _toStr(json['title'], fallback: ''),
-      description: (json['description'] as String?),
-
-      status: _toStr(json['status'], fallback: 'pending'),
-
-      // priority might be null / string / number
+      title: _toStr(
+        titleFromRelation ?? json['title'],
+        fallback: 'Untitled Log',
+      ),
+      description: _toStr(
+        remarks ?? descriptionFromRelation ?? json['description'],
+        fallback: '',
+      ).trim().isEmpty
+          ? null
+          : _toStr(
+              remarks ?? descriptionFromRelation ?? json['description'],
+              fallback: '',
+            ),
+      status: _normalizeStatus(json['status']),
       priority: json['priority'] != null ? _toStr(json['priority']).trim() : null,
-
-      // cover color might be null
       coverColor: json['cover_color'] as String?,
-
-      dueDate: _toNullableDate(json['due_date']),
+      dueDate: _toNullableDate(
+        json['activity_date'] ?? json['due_date'],
+      ),
       createdAt: _toNullableDate(json['created_at']),
       updatedAt: _toNullableDate(json['updated_at']),
-
-      comments: _parseComments(rawComments),
     );
   }
 
-  /// Payload for task updates (keep minimal; DO NOT include comments)
   Map<String, dynamic> toJson() {
     return {
       'title': title,
@@ -130,7 +121,6 @@ class Task {
     };
   }
 
-  /// For local persistence (optional)
   Map<String, dynamic> toStorageJson() {
     return {
       'id': id,
@@ -143,8 +133,22 @@ class Task {
       'due_date': dueDate?.toIso8601String(),
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
-      'comments': comments.map((c) => c.toJson()).toList(),
     };
+  }
+
+  factory Task.fromStorageJson(Map<String, dynamic> json) {
+    return Task(
+      id: _toInt(json['id']),
+      userId: json['user_id'] == null ? null : _toInt(json['user_id']),
+      title: _toStr(json['title']),
+      description: json['description'] as String?,
+      status: _toStr(json['status'], fallback: 'pending'),
+      priority: json['priority'] as String?,
+      coverColor: json['cover_color'] as String?,
+      dueDate: _toNullableDate(json['due_date']),
+      createdAt: _toNullableDate(json['created_at']),
+      updatedAt: _toNullableDate(json['updated_at']),
+    );
   }
 
   Task copyWith({
@@ -158,7 +162,6 @@ class Task {
     DateTime? dueDate,
     DateTime? createdAt,
     DateTime? updatedAt,
-    List<TaskComment>? comments,
   }) {
     return Task(
       id: id ?? this.id,
@@ -171,7 +174,6 @@ class Task {
       dueDate: dueDate ?? this.dueDate,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
-      comments: comments ?? this.comments,
     );
   }
 }

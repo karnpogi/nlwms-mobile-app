@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_client.dart';
 import 'log_accomplishment_screen.dart';
 
 class MyDutiesScreen extends StatefulWidget {
@@ -11,53 +12,28 @@ class MyDutiesScreen extends StatefulWidget {
 }
 
 class _MyDutiesScreenState extends State<MyDutiesScreen> {
+  final ApiClient _apiClient = ApiClient(baseUrl: 'http://10.0.2.2:8000/api');
+
   bool _loadingUser = true;
+  bool _loadingDuties = true;
 
   String _userRole = 'Library Staff';
   String _userSection = 'Assigned Section';
+  String? _dutiesError;
 
-  final List<DutyItem> _duties = const [
-    DutyItem(
-      title: 'Shelving Books',
-      description: 'Return books to proper shelves after borrowing/use',
-      targetLabel: 'Target: 50 books/day',
-      frequency: DutyFrequency.daily,
-      proofRequired: false,
-    ),
-    DutyItem(
-      title: 'Research Assistance',
-      description: 'Help students and faculty with research queries',
-      targetLabel: 'Target: 10 queries/day',
-      frequency: DutyFrequency.daily,
-      proofRequired: false,
-    ),
-    DutyItem(
-      title: 'Utilization Counting',
-      description: 'Count daily library visitors and internet users',
-      targetLabel: 'Unit: visitors',
-      frequency: DutyFrequency.daily,
-      proofRequired: true,
-    ),
-    DutyItem(
-      title: 'Weekly Report Compilation',
-      description: 'Compile and submit weekly accomplishment report',
-      targetLabel: 'Target: 1 report/week',
-      frequency: DutyFrequency.weekly,
-      proofRequired: true,
-    ),
-    DutyItem(
-      title: 'Section Inventory Check',
-      description: 'Check book inventory of assigned section shelves',
-      targetLabel: 'Target: 1 check/month',
-      frequency: DutyFrequency.monthly,
-      proofRequired: true,
-    ),
-  ];
+  List<DutyItem> _duties = [];
 
   @override
   void initState() {
     super.initState();
-    _loadUserInfo();
+    _initializePage();
+  }
+
+  Future<void> _initializePage() async {
+    await Future.wait([
+      _loadUserInfo(),
+      _loadDuties(),
+    ]);
   }
 
   Future<void> _loadUserInfo() async {
@@ -73,10 +49,20 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
               decoded['user_role']?.toString().trim() ??
               'Library Staff';
 
-          final section = decoded['section']?.toString().trim() ??
-              decoded['section_name']?.toString().trim() ??
-              decoded['assigned_section']?.toString().trim() ??
-              'Assigned Section';
+          String section = 'Assigned Section';
+
+          final sectionValue = decoded['section'];
+          if (sectionValue is Map<String, dynamic>) {
+            section = sectionValue['name']?.toString().trim() ??
+                decoded['section_name']?.toString().trim() ??
+                decoded['assigned_section']?.toString().trim() ??
+                'Assigned Section';
+          } else {
+            section = decoded['section']?.toString().trim() ??
+                decoded['section_name']?.toString().trim() ??
+                decoded['assigned_section']?.toString().trim() ??
+                'Assigned Section';
+          }
 
           if (!mounted) return;
 
@@ -95,8 +81,140 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
     }
   }
 
+  Future<void> _loadDuties() async {
+    try {
+      if (mounted) {
+        setState(() {
+          _loadingDuties = true;
+          _dutiesError = null;
+        });
+      }
+
+      final response = await _apiClient.get('/mobile/duties');
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+
+        List<dynamic> rawList = [];
+        if (decoded is List) {
+          rawList = decoded;
+        } else if (decoded is Map<String, dynamic>) {
+          if (decoded['data'] is List) {
+            rawList = decoded['data'] as List<dynamic>;
+          } else if (decoded['duties'] is List) {
+            rawList = decoded['duties'] as List<dynamic>;
+          }
+        }
+
+        final mappedDuties = rawList
+            .whereType<Map>()
+            .map((item) => _mapDutyItem(Map<String, dynamic>.from(item)))
+            .toList();
+
+        if (!mounted) return;
+
+        setState(() {
+          _duties = mappedDuties;
+          _loadingDuties = false;
+          _dutiesError = null;
+        });
+      } else {
+        if (!mounted) return;
+
+        setState(() {
+          _loadingDuties = false;
+          _dutiesError = 'Failed to load duties.';
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _loadingDuties = false;
+        _dutiesError = 'Unable to connect to the server.';
+      });
+    }
+  }
+
+  DutyItem _mapDutyItem(Map<String, dynamic> duty) {
+    final title = duty['title']?.toString() ?? 'Untitled Duty';
+    final description =
+        duty['description']?.toString() ?? 'No description provided.';
+
+    final targetQuantity = duty['target_quantity'];
+    final unitOfMeasure = duty['unit_of_measure']?.toString();
+    final targetLabel = _buildTargetLabel(
+      targetQuantity: targetQuantity,
+      unitOfMeasure: unitOfMeasure,
+      frequency: duty['frequency']?.toString(),
+    );
+
+    final frequency = _parseFrequency(duty['frequency']?.toString());
+
+    final proofRequiredValue = duty['proof_required'];
+    final proofRequired = proofRequiredValue == true ||
+        proofRequiredValue == 1 ||
+        proofRequiredValue == '1' ||
+        proofRequiredValue?.toString().toLowerCase() == 'true';
+
+    return DutyItem(
+      id: duty['id'],
+      title: title,
+      description: description,
+      targetLabel: targetLabel,
+      frequency: frequency,
+      proofRequired: proofRequired,
+    );
+  }
+
+  String _buildTargetLabel({
+    required dynamic targetQuantity,
+    required String? unitOfMeasure,
+    required String? frequency,
+  }) {
+    final target = targetQuantity?.toString().trim();
+    final unit = unitOfMeasure?.trim();
+    final freq = frequency?.trim().toLowerCase();
+
+    if (target != null && target.isNotEmpty) {
+      if (unit != null && unit.isNotEmpty) {
+        if (freq != null && freq.isNotEmpty) {
+          return 'Target: $target $unit/$freq';
+        }
+        return 'Target: $target $unit';
+      }
+
+      if (freq != null && freq.isNotEmpty) {
+        return 'Target: $target/$freq';
+      }
+
+      return 'Target: $target';
+    }
+
+    if (unit != null && unit.isNotEmpty) {
+      return 'Unit: $unit';
+    }
+
+    return 'Target: Not specified';
+  }
+
+  DutyFrequency _parseFrequency(String? value) {
+    switch ((value ?? '').toLowerCase()) {
+      case 'weekly':
+        return DutyFrequency.weekly;
+      case 'monthly':
+        return DutyFrequency.monthly;
+      case 'daily':
+      default:
+        return DutyFrequency.daily;
+    }
+  }
+
   Future<void> _refreshPage() async {
-    await _loadUserInfo();
+    await Future.wait([
+      _loadUserInfo(),
+      _loadDuties(),
+    ]);
   }
 
   List<DutyItem> get _dailyDuties =>
@@ -215,6 +333,7 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
       MaterialPageRoute(
         builder: (_) => LogAccomplishmentScreen(
           duty: {
+            'id': duty.id,
             'title': duty.title,
             'frequency': _frequencyLabel(duty.frequency),
           },
@@ -403,6 +522,101 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
     );
   }
 
+  Widget _buildDutyStatus(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    if (_loadingDuties) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 18),
+        child: Center(
+          child: Column(
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 12),
+              Text(
+                'Loading duties...',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_dutiesError != null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: cs.errorContainer.withOpacity(0.45),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: cs.error.withOpacity(0.25),
+            ),
+          ),
+          child: Text(
+            _dutiesError!,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: cs.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_duties.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: cs.outlineVariant.withOpacity(0.35),
+            ),
+          ),
+          child: Text(
+            'No duties assigned yet.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        const SizedBox(height: 18),
+        _buildDutySection(
+          context,
+          title: 'Daily Duties',
+          duties: _dailyDuties,
+        ),
+        const SizedBox(height: 8),
+        _buildDutySection(
+          context,
+          title: 'Weekly Duties',
+          duties: _weeklyDuties,
+        ),
+        const SizedBox(height: 8),
+        _buildDutySection(
+          context,
+          title: 'Monthly Duties',
+          duties: _monthlyDuties,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -416,24 +630,7 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildHeader(context),
-                const SizedBox(height: 18),
-                _buildDutySection(
-                  context,
-                  title: 'Daily Duties',
-                  duties: _dailyDuties,
-                ),
-                const SizedBox(height: 8),
-                _buildDutySection(
-                  context,
-                  title: 'Weekly Duties',
-                  duties: _weeklyDuties,
-                ),
-                const SizedBox(height: 8),
-                _buildDutySection(
-                  context,
-                  title: 'Monthly Duties',
-                  duties: _monthlyDuties,
-                ),
+                _buildDutyStatus(context),
               ],
             ),
           ),
@@ -450,6 +647,7 @@ enum DutyFrequency {
 }
 
 class DutyItem {
+  final dynamic id;
   final String title;
   final String description;
   final String targetLabel;
@@ -457,6 +655,7 @@ class DutyItem {
   final bool proofRequired;
 
   const DutyItem({
+    this.id,
     required this.title,
     required this.description,
     required this.targetLabel,
