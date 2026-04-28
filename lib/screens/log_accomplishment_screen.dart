@@ -8,10 +8,12 @@ import '../services/api_client.dart';
 
 class LogAccomplishmentScreen extends StatefulWidget {
   final Map<String, dynamic>? duty;
+  final Map<String, dynamic>? existingLog;
 
   const LogAccomplishmentScreen({
     super.key,
     this.duty,
+    this.existingLog,
   });
 
   @override
@@ -31,23 +33,51 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
 
   DateTime _activityDate = DateTime.now();
   File? _proofFile;
-
-  bool _savingDraft = false;
   bool _submitting = false;
 
   final ImagePicker _picker = ImagePicker();
+
+  bool get _isEditMode => widget.existingLog != null;
+
+  Map<String, dynamic>? get _resolvedDuty {
+    if (widget.duty != null) return widget.duty;
+
+    final dutyTemplate = widget.existingLog?['duty_template'];
+
+    if (dutyTemplate is Map) {
+      return Map<String, dynamic>.from(dutyTemplate);
+    }
+
+    return null;
+  }
 
   @override
   void initState() {
     super.initState();
 
-    _dutyTitleCtrl = TextEditingController(
-      text: widget.duty?['title']?.toString() ?? '',
-    );
+    final duty = _resolvedDuty;
 
-    _frequencyCtrl = TextEditingController(
-      text: widget.duty?['frequency']?.toString() ?? '',
-    );
+    final dutyTitle = duty?['title']?.toString() ??
+        widget.existingLog?['duty_title']?.toString() ??
+        'Assigned Duty';
+
+    final frequency = duty?['frequency']?.toString() ??
+        widget.existingLog?['duty_template']?['frequency']?.toString() ??
+        widget.existingLog?['frequency']?.toString() ??
+        '';
+
+    _dutyTitleCtrl = TextEditingController(text: dutyTitle);
+    _frequencyCtrl = TextEditingController(text: frequency);
+
+    if (_isEditMode) {
+      _quantityCtrl.text = widget.existingLog?['quantity']?.toString() ?? '';
+      _remarksCtrl.text = widget.existingLog?['remarks']?.toString() ?? '';
+
+      final rawDate = widget.existingLog?['activity_date']?.toString();
+      if (rawDate != null && rawDate.isNotEmpty) {
+        _activityDate = DateTime.tryParse(rawDate) ?? DateTime.now();
+      }
+    }
   }
 
   @override
@@ -83,6 +113,20 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     final month = date.month.toString().padLeft(2, '0');
     final day = date.day.toString().padLeft(2, '0');
     return '${date.year}-$month-$day';
+  }
+
+  int? _resolvedDutyId() {
+    final duty = _resolvedDuty;
+
+    if (duty?['id'] != null) {
+      return int.tryParse(duty!['id'].toString());
+    }
+
+    if (widget.existingLog?['duty_template_id'] != null) {
+      return int.tryParse(widget.existingLog!['duty_template_id'].toString());
+    }
+
+    return null;
   }
 
   Future<void> _pickDate() async {
@@ -144,12 +188,10 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
 
   Map<String, dynamic> _buildPayload() {
     return {
-      'duty_template_id': widget.duty?['id'],
+      'duty_template_id': _resolvedDutyId(),
       'activity_date': _formatApiDate(_activityDate),
       'quantity': int.tryParse(_quantityCtrl.text.trim()) ?? 0,
-      'remarks': _remarksCtrl.text.trim().isEmpty
-          ? null
-          : _remarksCtrl.text.trim(),
+      'remarks': _remarksCtrl.text.trim(),
     };
   }
 
@@ -159,113 +201,91 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
 
       if (decoded is Map<String, dynamic>) {
         final message = decoded['message']?.toString();
-        if (message != null && message.isNotEmpty) {
-          return message;
-        }
+        if (message != null && message.isNotEmpty) return message;
 
         final errors = decoded['errors'];
         if (errors is Map) {
           for (final value in errors.values) {
-            if (value is List && value.isNotEmpty) {
-              return value.first.toString();
-            }
-            if (value is String && value.isNotEmpty) {
-              return value;
-            }
+            if (value is List && value.isNotEmpty) return value.first.toString();
+            if (value is String && value.isNotEmpty) return value;
           }
         }
       }
-    } catch (_) {
-      // ignore parsing failure and use fallback below
-    }
+    } catch (_) {}
 
     return 'Request failed ($statusCode).';
   }
 
-  Future<Map<String, dynamic>?> _createLog() async {
-    if (!_formKey.currentState!.validate()) return null;
+  Future<Map<String, dynamic>> _saveLog() async {
+    if (!_formKey.currentState!.validate()) {
+      throw Exception('Please complete all required fields.');
+    }
 
-    if (widget.duty?['id'] == null) {
+    if (_resolvedDutyId() == null) {
       throw Exception('No duty selected.');
     }
 
-    final response = await _apiClient.post('/mobile/logs', _buildPayload());
+    final response = _isEditMode
+        ? await _apiClient.put(
+            '/mobile/logs/${widget.existingLog!['id']}',
+            _buildPayload(),
+          )
+        : await _apiClient.post('/mobile/logs', _buildPayload());
 
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      try {
-        final decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
-          final data = decoded['data'];
-          if (data is Map<String, dynamic>) {
-            return data;
-          }
-        }
-      } catch (_) {
-        // if response parsing fails, still treat as success
-      }
+    final validStatusCodes = _isEditMode ? [200] : [200, 201];
 
-      return _buildPayload();
+    if (!validStatusCodes.contains(response.statusCode)) {
+      throw Exception(_extractErrorMessage(response.body, response.statusCode));
     }
-
-    throw Exception(_extractErrorMessage(response.body, response.statusCode));
-  }
-
-  Future<void> _saveDraft() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _savingDraft = true);
 
     try {
-      final createdLog = await _createLog();
+      final decoded = jsonDecode(response.body);
 
-      if (!mounted) return;
+      if (decoded is Map<String, dynamic>) {
+        final data = decoded['data'];
+        if (data is Map<String, dynamic>) return data;
+        return decoded;
+      }
+    } catch (_) {}
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Accomplishment log saved as draft.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-
-      Navigator.pop(context, createdLog);
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to save draft: $e'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _savingDraft = false);
-    }
+    return _buildPayload();
   }
 
   Future<void> _submitLog() async {
+    if (_submitting) return;
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _submitting = true);
 
     try {
-      final createdLog = await _createLog();
+      final savedLog = await _saveLog();
 
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Accomplishment log submitted successfully.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-
-      Navigator.pop(context, createdLog);
-    } catch (e) {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to submit log: $e'),
+          content: Text(
+            _isEditMode
+                ? 'Accomplishment log updated successfully.'
+                : 'Accomplishment log submitted successfully.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      Navigator.pop(context, savedLog);
+    } catch (e) {
+      if (!mounted) return;
+
+      final message = e.toString().replaceFirst('Exception: ', '');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isEditMode
+                ? 'Failed to update log: $message'
+                : 'Failed to submit log: $message',
+          ),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -285,7 +305,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Log Accomplishment'),
+        title: Text(_isEditMode ? 'Edit Accomplishment' : 'Log Accomplishment'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -296,15 +316,41 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
+                if (_isEditMode)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.orange.withOpacity(0.35)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.edit_note_outlined,
+                            color: Colors.orange),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'You are editing an existing accomplishment record.',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: Colors.orange.shade900,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: cardBg,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: cs.outlineVariant.withOpacity(0.25),
-                    ),
+                    border: Border.all(color: cs.outlineVariant.withOpacity(0.25)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -318,32 +364,20 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: _dutyTitleCtrl,
-                        readOnly: widget.duty != null,
+                        readOnly: true,
                         decoration: const InputDecoration(
                           labelText: 'Duty Title',
                           prefixIcon: Icon(Icons.library_books_outlined),
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Duty title is required.';
-                          }
-                          return null;
-                        },
                       ),
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: _frequencyCtrl,
-                        readOnly: widget.duty != null,
+                        readOnly: true,
                         decoration: const InputDecoration(
                           labelText: 'Frequency',
                           prefixIcon: Icon(Icons.repeat_outlined),
                         ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Frequency is required.';
-                          }
-                          return null;
-                        },
                       ),
                     ],
                   ),
@@ -355,9 +389,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                   decoration: BoxDecoration(
                     color: cardBg,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: cs.outlineVariant.withOpacity(0.25),
-                    ),
+                    border: Border.all(color: cs.outlineVariant.withOpacity(0.25)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -370,7 +402,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                       ),
                       const SizedBox(height: 14),
                       InkWell(
-                        onTap: _pickDate,
+                        onTap: _submitting ? null : _pickDate,
                         borderRadius: BorderRadius.circular(14),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
@@ -396,7 +428,8 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                                   children: [
                                     Text(
                                       'Activity Date',
-                                      style: theme.textTheme.labelMedium?.copyWith(
+                                      style:
+                                          theme.textTheme.labelMedium?.copyWith(
                                         color: cs.onSurfaceVariant,
                                         fontWeight: FontWeight.w700,
                                       ),
@@ -404,7 +437,8 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                                     const SizedBox(height: 4),
                                     Text(
                                       _formatDate(_activityDate),
-                                      style: theme.textTheme.bodyLarge?.copyWith(
+                                      style:
+                                          theme.textTheme.bodyLarge?.copyWith(
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
@@ -419,6 +453,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: _quantityCtrl,
+                        enabled: !_submitting,
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
                           labelText: 'Quantity Completed',
@@ -441,6 +476,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                       const SizedBox(height: 14),
                       TextFormField(
                         controller: _remarksCtrl,
+                        enabled: !_submitting,
                         minLines: 4,
                         maxLines: 6,
                         decoration: const InputDecoration(
@@ -466,9 +502,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                   decoration: BoxDecoration(
                     color: cardBg,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: cs.outlineVariant.withOpacity(0.25),
-                    ),
+                    border: Border.all(color: cs.outlineVariant.withOpacity(0.25)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -496,7 +530,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                       const SizedBox(height: 14),
                       if (_proofFile == null)
                         OutlinedButton.icon(
-                          onPressed: _pickProofImage,
+                          onPressed: _submitting ? null : _pickProofImage,
                           icon: const Icon(Icons.upload_file_outlined),
                           label: const Text('Upload Proof'),
                         )
@@ -517,7 +551,8 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                               children: [
                                 Expanded(
                                   child: OutlinedButton.icon(
-                                    onPressed: _pickProofImage,
+                                    onPressed:
+                                        _submitting ? null : _pickProofImage,
                                     icon: const Icon(Icons.edit_outlined),
                                     label: const Text('Change'),
                                   ),
@@ -525,7 +560,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: OutlinedButton.icon(
-                                    onPressed: _removeProof,
+                                    onPressed: _submitting ? null : _removeProof,
                                     icon: const Icon(Icons.delete_outline),
                                     label: const Text('Remove'),
                                   ),
@@ -538,38 +573,27 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                   ),
                 ),
                 const SizedBox(height: 22),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: (_savingDraft || _submitting)
-                            ? null
-                            : _saveDraft,
-                        child: _savingDraft
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Save Draft'),
-                      ),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _submitting ? null : _submitLog,
+                    icon: _submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            _isEditMode
+                                ? Icons.save_outlined
+                                : Icons.send_outlined,
+                          ),
+                    label: Text(
+                      _submitting
+                          ? (_isEditMode ? 'Updating...' : 'Submitting...')
+                          : (_isEditMode ? 'Update Accomplishment' : 'Submit'),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: (_savingDraft || _submitting)
-                            ? null
-                            : _submitLog,
-                        child: _submitting
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('Submit'),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),

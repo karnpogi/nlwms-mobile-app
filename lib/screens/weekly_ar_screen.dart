@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+
 import '../services/task_service.dart';
+import 'log_accomplishment_screen.dart';
 
 class WeeklyARScreen extends StatefulWidget {
   final TaskService taskService;
@@ -21,6 +23,7 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
   String _submissionStatus = 'Draft';
   String _submissionStatusText = 'Not yet submitted';
   String _reportingWeekLabel = '';
+  String? _submissionFeedback;
 
   List<Map<String, dynamic>> _days = [];
 
@@ -34,6 +37,15 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
   }
 
   DateTime get _weekEnd => _weekStart.add(const Duration(days: 4));
+
+  bool get _isReturned => _submissionStatus.toLowerCase() == 'returned';
+
+  bool get _canSubmit {
+    final status = _submissionStatus.toLowerCase();
+    return status == 'draft' || status == 'returned';
+  }
+
+  bool get _canEditLogs => _submissionStatus.toLowerCase() == 'returned';
 
   String _formatDate(DateTime date) {
     const months = [
@@ -52,6 +64,13 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
     ];
 
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  String _normalizeStatus(String? status) {
+    if (status == null || status.trim().isEmpty) return 'Draft';
+
+    final clean = status.trim().toLowerCase();
+    return clean[0].toUpperCase() + clean.substring(1);
   }
 
   @override
@@ -92,14 +111,14 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
 
         String status = 'Draft';
         String statusText = 'Not yet submitted';
+        String? feedback;
 
         if (submission is Map<String, dynamic>) {
           final rawStatus = submission['status']?.toString().trim();
-          if (rawStatus != null && rawStatus.isNotEmpty) {
-            status = rawStatus[0].toUpperCase() + rawStatus.substring(1);
-          }
+          status = _normalizeStatus(rawStatus);
+          feedback = submission['feedback']?.toString();
 
-          switch (rawStatus) {
+          switch (rawStatus?.toLowerCase()) {
             case 'submitted':
               statusText = 'Submitted for Unit Head review';
               break;
@@ -131,6 +150,7 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
           _reportingWeekLabel = reportingWeek;
           _submissionStatus = status;
           _submissionStatusText = statusText;
+          _submissionFeedback = feedback;
           _days = days;
         });
       } else {
@@ -175,10 +195,10 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (!mounted) return;
 
-        final message = decoded is Map<String, dynamic> &&
-                decoded['message'] != null
-            ? decoded['message'].toString()
-            : 'Weekly accomplishment report submitted successfully.';
+        final message =
+            decoded is Map<String, dynamic> && decoded['message'] != null
+                ? decoded['message'].toString()
+                : 'Weekly accomplishment report submitted successfully.';
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message)),
@@ -219,6 +239,102 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
     }
   }
 
+  Future<void> _openNewLogAccomplishment() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LogAccomplishmentScreen(),
+      ),
+    );
+
+    if (!mounted) return;
+    await _loadWeeklyReport();
+  }
+
+  Future<void> _openEditLog(Map<String, dynamic> log) async {
+    if (!_canEditLogs) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LogAccomplishmentScreen(
+          existingLog: log,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    await _loadWeeklyReport();
+  }
+
+  Widget _buildFeedbackCard() {
+    final feedback = _submissionFeedback?.trim();
+
+    if (!_isReturned || feedback == null || feedback.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      color: Colors.orange.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.feedback_outlined, color: Colors.orange.shade700),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                feedback,
+                style: TextStyle(
+                  color: Colors.orange.shade900,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRevisionActionCard() {
+    if (!_isReturned) return const SizedBox.shrink();
+
+    return Card(
+      color: Colors.blueGrey.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Revision Action',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Tap a specific accomplishment below to edit it. You may also add a new accomplishment if needed.',
+              style: TextStyle(height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _openNewLogAccomplishment,
+                icon: const Icon(Icons.add_circle_outline),
+                label: const Text('Add New Accomplishment'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildDayCard(Map<String, dynamic> day) {
     final dayLabel = day['day_label']?.toString() ?? 'Day';
     final logs = (day['logs'] as List?) ?? [];
@@ -245,40 +361,99 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
               )
             else
               ...logs.map((log) {
-                final item = log as Map<String, dynamic>;
-                final title =
-                    item['duty_template']?['title']?.toString() ?? 'Untitled duty';
+                final item = Map<String, dynamic>.from(log as Map);
+                final title = item['duty_template']?['title']?.toString() ??
+                    'Untitled duty';
                 final quantity = item['quantity']?.toString() ?? '0';
                 final remarks = item['remarks']?.toString() ?? '';
 
-                return Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: Colors.grey.shade100,
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                return InkWell(
+                  onTap: _canEditLogs ? () => _openEditLog(item) : null,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      color: _canEditLogs
+                          ? Colors.orange.shade50
+                          : Colors.grey.shade100,
+                      border: Border.all(
+                        color: _canEditLogs
+                            ? Colors.orange.shade200
+                            : Colors.grey.shade300,
                       ),
-                      const SizedBox(height: 6),
-                      Text('Qty: $quantity'),
-                      if (remarks.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text('Remarks: $remarks'),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_canEditLogs) ...[
+                          Icon(
+                            Icons.edit_note_outlined,
+                            size: 20,
+                            color: Colors.orange.shade700,
+                          ),
+                          const SizedBox(width: 10),
+                        ],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text('Qty: $quantity'),
+                              if (remarks.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text('Remarks: $remarks'),
+                              ],
+                              if (_canEditLogs) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Tap to edit',
+                                  style: TextStyle(
+                                    color: Colors.orange.shade800,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                       ],
-                    ],
+                    ),
                   ),
                 );
               }).toList(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    if (!_canSubmit) {
+      return const SizedBox.shrink();
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: ElevatedButton(
+        onPressed: _isSubmitting ? null : _submitWeeklyAR,
+        child: _isSubmitting
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Text(_isReturned ? 'Resubmit Weekly AR' : 'Submit Weekly AR'),
       ),
     );
   }
@@ -308,7 +483,6 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 16),
-
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -340,9 +514,7 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 12),
-
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -381,34 +553,19 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                       ),
                     ),
                   ),
-
+                  const SizedBox(height: 12),
+                  _buildFeedbackCard(),
+                  if (_isReturned) const SizedBox(height: 12),
+                  _buildRevisionActionCard(),
                   const SizedBox(height: 16),
-
                   const Text(
                     'Review flow: You → Unit Head → Head Librarian',
                     style: TextStyle(fontWeight: FontWeight.w500),
                   ),
-
                   const SizedBox(height: 16),
-
                   ..._days.map(_buildDayCard),
-
                   const SizedBox(height: 8),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: _isSubmitting ? null : _submitWeeklyAR,
-                      child: _isSubmitting
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Submit Weekly AR'),
-                    ),
-                  ),
+                  _buildSubmitButton(),
                 ],
               ),
             ),

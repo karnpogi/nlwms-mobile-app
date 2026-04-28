@@ -43,7 +43,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _loadUser();
-    _loadEntries();
+    _loadDashboard();
   }
 
   Future<void> _loadUser() async {
@@ -103,46 +103,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  Future<void> _loadEntries() async {
+  Future<void> _loadDashboard() async {
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      final submissionsRes =
-          await widget.taskService.apiClient.get('/mobile/submissions');
+      final dashboardRes =
+          await widget.taskService.apiClient.get('/mobile/dashboard');
+
+      if (dashboardRes.statusCode != 200) {
+        throw Exception(
+          'Failed to load dashboard: ${dashboardRes.statusCode}',
+        );
+      }
+
+      final dashboardDecoded = jsonDecode(dashboardRes.body);
+
+      if (dashboardDecoded is! Map<String, dynamic>) {
+        throw Exception('Invalid dashboard response.');
+      }
+
+      // Logs are fetched only for Recent Feedback display.
+      // Dashboard counters now come only from /mobile/dashboard.
       final logsRes = await widget.taskService.apiClient.get('/mobile/logs');
 
-      if (submissionsRes.statusCode != 200) {
-        throw Exception(
-          'Failed to load submissions: ${submissionsRes.statusCode}',
-        );
-      }
-
-      if (logsRes.statusCode != 200) {
-        throw Exception(
-          'Failed to load logs: ${logsRes.statusCode}',
-        );
-      }
-
-      final submissionsDecoded = jsonDecode(submissionsRes.body);
-      final logsDecoded = jsonDecode(logsRes.body);
-
-      List<dynamic> submissions = [];
       List<dynamic> logs = [];
 
-      if (submissionsDecoded is Map<String, dynamic> &&
-          submissionsDecoded['data'] is List) {
-        submissions = submissionsDecoded['data'] as List<dynamic>;
-      } else if (submissionsDecoded is List) {
-        submissions = submissionsDecoded;
-      }
+      if (logsRes.statusCode == 200) {
+        final logsDecoded = jsonDecode(logsRes.body);
 
-      if (logsDecoded is Map<String, dynamic> && logsDecoded['data'] is List) {
-        logs = logsDecoded['data'] as List<dynamic>;
-      } else if (logsDecoded is List) {
-        logs = logsDecoded;
+        if (logsDecoded is Map<String, dynamic> &&
+            logsDecoded['data'] is List) {
+          logs = logsDecoded['data'] as List<dynamic>;
+        } else if (logsDecoded is List) {
+          logs = logsDecoded;
+        }
       }
 
       final mappedLogs = logs
@@ -153,35 +150,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!mounted) return;
 
       setState(() {
+        _totalSubmissions = _toInt(dashboardDecoded['total_submissions']);
+        _submittedCount = _toInt(dashboardDecoded['submitted_count']);
+        _reviewedCount = _toInt(dashboardDecoded['reviewed_count']);
+        _returnedCount = _toInt(dashboardDecoded['returned_count']);
+        _verifiedCount = _toInt(dashboardDecoded['verified_count']);
+        _totalLogs = _toInt(dashboardDecoded['total_logs']);
+
         _entries = mappedLogs;
-
-        _totalSubmissions = submissions.length;
-        _submittedCount = submissions.where((s) {
-          if (s is Map) {
-            return s['status']?.toString().toLowerCase() == 'submitted';
-          }
-          return false;
-        }).length;
-        _reviewedCount = submissions.where((s) {
-          if (s is Map) {
-            return s['status']?.toString().toLowerCase() == 'reviewed';
-          }
-          return false;
-        }).length;
-        _returnedCount = submissions.where((s) {
-          if (s is Map) {
-            return s['status']?.toString().toLowerCase() == 'returned';
-          }
-          return false;
-        }).length;
-        _verifiedCount = submissions.where((s) {
-          if (s is Map) {
-            return s['status']?.toString().toLowerCase() == 'verified';
-          }
-          return false;
-        }).length;
-
-        _totalLogs = logs.length;
       });
     } catch (e) {
       if (!mounted) return;
@@ -311,8 +287,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => WeeklyARScreen(taskService: widget.taskService  
-            ),
+            builder: (_) => WeeklyARScreen(taskService: widget.taskService),
           ),
         );
       },
@@ -330,7 +305,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Row(
               children: [
-                Icon(Icons.calendar_today_outlined, size: 18, color: cs.onSurface),
+                Icon(
+                  Icons.calendar_today_outlined,
+                  size: 18,
+                  color: cs.onSurface,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -344,7 +323,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'March 16 - March 20, 2026',
+              'Open your weekly accomplishment report',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
@@ -360,7 +339,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    'Draft',
+                    'Current Week',
                     style: theme.textTheme.labelSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                       color: cs.onSurfaceVariant,
@@ -370,7 +349,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Not yet submitted',
+                    'Review and submit your AR',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),
@@ -710,7 +689,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => WeeklyARScreen(taskService: widget.taskService  
+                    builder: (_) => WeeklyARScreen(
+                      taskService: widget.taskService,
                     ),
                   ),
                 );
@@ -773,7 +753,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onRefresh: () async {
           await Future.wait([
             _loadUser(),
-            _loadEntries(),
+            _loadDashboard(),
           ]);
         },
         child: SafeArea(

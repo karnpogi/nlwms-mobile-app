@@ -69,16 +69,19 @@ class ApiClient {
     );
   }
 
-  Future<http.Response> put(
-    String endpoint, [
-    Map<String, dynamic>? body,
-  ]) async {
-    return http.put(
-      _uri(endpoint),
-      headers: await _jsonHeaders(),
-      body: jsonEncode(body ?? {}),
-    );
-  }
+  Future<http.Response> put(String endpoint, Map<String, dynamic> body) async {
+  final token = await _getToken();
+
+  return http.put(
+    Uri.parse('$baseUrl$endpoint'),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    },
+    body: jsonEncode(body),
+  );
+}
 
   Future<http.Response> patch(
     String endpoint, [
@@ -130,4 +133,6 @@ class ApiClient {
     final streamedResponse = await request.send();
     return http.Response.fromStream(streamedResponse);
   }
+
+  
 }
