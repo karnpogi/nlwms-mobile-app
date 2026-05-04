@@ -38,9 +38,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final stored = prefs.getString('auth_user');
 
     if (stored != null) {
-      setState(() {
-        _user = jsonDecode(stored);
-      });
+      final decoded = jsonDecode(stored);
+      if (decoded is Map) {
+        setState(() {
+          _user = decoded.cast<String, dynamic>();
+        });
+      }
     }
   }
 
@@ -48,11 +51,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _loggingOut = true);
 
     try {
-      await widget.apiClient.post('/auth/logout', {});
+      await widget.apiClient.post('/mobile/logout', {});
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('auth_token');
       await prefs.remove('auth_user');
+      await prefs.remove('token');
+      await prefs.remove('user');
+      await prefs.remove('user_data');
+      await prefs.remove('current_user');
+      await prefs.remove('access_token');
+      await prefs.remove('bearer_token');
 
       if (!mounted) return;
 
@@ -78,10 +87,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _resolveSection(Map<String, dynamic> user) {
-    final section = user['section']?.toString().trim() ??
-        user['section_name']?.toString().trim() ??
-        user['assigned_section']?.toString().trim() ??
-        '';
+    final sectionValue = user['section'];
+    String section = '';
+
+    if (sectionValue is Map) {
+      section = sectionValue['name']?.toString().trim() ?? '';
+    } else if (sectionValue != null) {
+      section = sectionValue.toString().trim();
+    }
+
+    if (section.isEmpty) {
+      section = user['section_name']?.toString().trim() ??
+          user['assigned_section']?.toString().trim() ??
+          '';
+    }
+
     return section.isNotEmpty ? section : 'Assigned Section';
   }
 

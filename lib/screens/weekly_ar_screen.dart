@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/task_service.dart';
 import 'log_accomplishment_screen.dart';
+import 'submission_history_screen.dart';
 
 class WeeklyARScreen extends StatefulWidget {
   final TaskService taskService;
@@ -45,7 +46,13 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
     return status == 'draft' || status == 'returned';
   }
 
-  bool get _canEditLogs => _submissionStatus.toLowerCase() == 'returned';
+  bool _canEditLog(Map<String, dynamic> log) {
+    final logStatus = log['status']?.toString().toLowerCase();
+    final requiresRevision = log['requires_revision'] == true ||
+        log['requires_revision']?.toString() == '1';
+
+    return _isReturned && (logStatus == 'returned' || requiresRevision);
+  }
 
   String _formatDate(DateTime date) {
     const months = [
@@ -252,7 +259,7 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
   }
 
   Future<void> _openEditLog(Map<String, dynamic> log) async {
-    if (!_canEditLogs) return;
+    if (!_canEditLog(log)) return;
 
     await Navigator.push(
       context,
@@ -268,34 +275,9 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
   }
 
   Widget _buildFeedbackCard() {
-    final feedback = _submissionFeedback?.trim();
-
-    if (!_isReturned || feedback == null || feedback.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Card(
-      color: Colors.orange.shade50,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.feedback_outlined, color: Colors.orange.shade700),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                feedback,
-                style: TextStyle(
-                  color: Colors.orange.shade900,
-                  height: 1.4,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    // General Weekly AR feedback is intentionally hidden on mobile.
+    // Staff-facing correction notes are shown inside each specific returned log card.
+    return const SizedBox.shrink();
   }
 
   Widget _buildRevisionActionCard() {
@@ -303,31 +285,22 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
 
     return Card(
       color: Colors.blueGrey.shade50,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+      child: const Padding(
+        padding: EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Revision Action',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 15,
               ),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Tap a specific accomplishment below to edit it. You may also add a new accomplishment if needed.',
+            SizedBox(height: 8),
+            Text(
+              'Only accomplishment logs specifically returned by the Unit Head can be edited. Other logs are view-only.',
               style: TextStyle(height: 1.4),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _openNewLogAccomplishment,
-                icon: const Icon(Icons.add_circle_outline),
-                label: const Text('Add New Accomplishment'),
-              ),
             ),
           ],
         ),
@@ -366,9 +339,12 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                     'Untitled duty';
                 final quantity = item['quantity']?.toString() ?? '0';
                 final remarks = item['remarks']?.toString() ?? '';
+                final revisionFeedback =
+                    item['revision_feedback']?.toString().trim() ?? '';
+                final canEditThisLog = _canEditLog(item);
 
                 return InkWell(
-                  onTap: _canEditLogs ? () => _openEditLog(item) : null,
+                  onTap: canEditThisLog ? () => _openEditLog(item) : null,
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
                     width: double.infinity,
@@ -376,11 +352,11 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
-                      color: _canEditLogs
+                      color: canEditThisLog
                           ? Colors.orange.shade50
                           : Colors.grey.shade100,
                       border: Border.all(
-                        color: _canEditLogs
+                        color: canEditThisLog
                             ? Colors.orange.shade200
                             : Colors.grey.shade300,
                       ),
@@ -388,7 +364,7 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (_canEditLogs) ...[
+                        if (canEditThisLog) ...[
                           Icon(
                             Icons.edit_note_outlined,
                             size: 20,
@@ -412,7 +388,43 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                                 const SizedBox(height: 4),
                                 Text('Remarks: $remarks'),
                               ],
-                              if (_canEditLogs) ...[
+                              if (revisionFeedback.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade100,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: Colors.orange.shade200,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Revision Note',
+                                        style: TextStyle(
+                                          color: Colors.orange.shade900,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        revisionFeedback,
+                                        style: TextStyle(
+                                          color: Colors.orange.shade900,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              if (canEditThisLog) ...[
                                 const SizedBox(height: 8),
                                 Text(
                                   'Tap to edit',
@@ -465,6 +477,22 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Weekly AR'),
+        actions: [
+          IconButton(
+            tooltip: 'Submission History',
+            icon: const Icon(Icons.history_outlined),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SubmissionHistoryScreen(
+                    taskService: widget.taskService,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -481,6 +509,24 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                   Text(
                     'Compile and submit your weekly accomplishment entries',
                     style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SubmissionHistoryScreen(
+                              taskService: widget.taskService,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.history_outlined),
+                      label: const Text('View Submission History'),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Card(

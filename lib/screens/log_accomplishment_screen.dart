@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-
-import '../services/api_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LogAccomplishmentScreen extends StatefulWidget {
   final Map<String, dynamic>? duty;
@@ -29,10 +29,13 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
   final TextEditingController _quantityCtrl = TextEditingController();
   final TextEditingController _remarksCtrl = TextEditingController();
 
-  final ApiClient _apiClient = ApiClient(baseUrl: 'http://10.0.2.2:8000/api');
+  static const String _baseApiUrl = 'http://10.0.2.2:8000/api';
 
   DateTime _activityDate = DateTime.now();
   File? _proofFile;
+  String? _existingProofFile;
+  String? _existingProofUrl;
+  bool _proofRemoved = false;
   bool _submitting = false;
 
   final ImagePicker _picker = ImagePicker();
@@ -76,6 +79,17 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
       final rawDate = widget.existingLog?['activity_date']?.toString();
       if (rawDate != null && rawDate.isNotEmpty) {
         _activityDate = DateTime.tryParse(rawDate) ?? DateTime.now();
+      }
+
+      final rawProof = widget.existingLog?['proof_file']?.toString();
+      final rawProofUrl = widget.existingLog?['proof_url']?.toString();
+
+      if (rawProof != null && rawProof.trim().isNotEmpty) {
+        _existingProofFile = rawProof;
+      }
+
+      if (rawProofUrl != null && rawProofUrl.trim().isNotEmpty) {
+        _existingProofUrl = rawProofUrl;
       }
     }
   }
@@ -178,12 +192,26 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     );
 
     if (picked != null) {
-      setState(() => _proofFile = File(picked.path));
+      setState(() {
+        _proofFile = File(picked.path);
+        _proofRemoved = false;
+      });
     }
   }
 
   void _removeProof() {
-    setState(() => _proofFile = null);
+    setState(() {
+      _proofFile = null;
+      _existingProofFile = null;
+      _existingProofUrl = null;
+      _proofRemoved = true;
+    });
+  }
+
+  bool get _hasExistingProof {
+    return !_proofRemoved &&
+        ((_existingProofFile != null && _existingProofFile!.isNotEmpty) ||
+            (_existingProofUrl != null && _existingProofUrl!.isNotEmpty));
   }
 
   Map<String, dynamic> _buildPayload() {
@@ -221,25 +249,59 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
       throw Exception('Please complete all required fields.');
     }
 
-    if (_resolvedDutyId() == null) {
+    final dutyId = _resolvedDutyId();
+    if (dutyId == null) {
       throw Exception('No duty selected.');
     }
 
-    final response = _isEditMode
-        ? await _apiClient.put(
-            '/mobile/logs/${widget.existingLog!['id']}',
-            _buildPayload(),
-          )
-        : await _apiClient.post('/mobile/logs', _buildPayload());
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+
+    if (token == null || token.isEmpty) {
+      throw Exception('Session expired. Please log in again.');
+    }
+
+    final endpoint = _isEditMode
+        ? '$_baseApiUrl/mobile/logs/${widget.existingLog!['id']}'
+        : '$_baseApiUrl/mobile/logs';
+
+    final request = http.MultipartRequest('POST', Uri.parse(endpoint));
+
+    request.headers.addAll({
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $token',
+    });
+
+    request.fields['duty_template_id'] = dutyId.toString();
+    request.fields['activity_date'] = _formatApiDate(_activityDate);
+    request.fields['quantity'] = _quantityCtrl.text.trim();
+    request.fields['remarks'] = _remarksCtrl.text.trim();
+
+    if (_isEditMode && _proofRemoved) {
+      request.fields['remove_proof'] = '1';
+    }
+
+    if (_proofFile != null) {
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'proof_file',
+          _proofFile!.path,
+        ),
+      );
+    }
+
+    final streamedResponse = await request.send();
+    final responseBody = await streamedResponse.stream.bytesToString();
+    final statusCode = streamedResponse.statusCode;
 
     final validStatusCodes = _isEditMode ? [200] : [200, 201];
 
-    if (!validStatusCodes.contains(response.statusCode)) {
-      throw Exception(_extractErrorMessage(response.body, response.statusCode));
+    if (!validStatusCodes.contains(statusCode)) {
+      throw Exception(_extractErrorMessage(responseBody, statusCode));
     }
 
     try {
-      final decoded = jsonDecode(response.body);
+      final decoded = jsonDecode(responseBody);
 
       if (decoded is Map<String, dynamic>) {
         final data = decoded['data'];
@@ -522,20 +584,15 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Proof upload is not yet connected to the current mobile log API.',
+                        'You can take a photo or choose from your gallery. Image proof will be attached to this accomplishment log.',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: cs.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 14),
-                      if (_proofFile == null)
-                        OutlinedButton.icon(
-                          onPressed: _submitting ? null : _pickProofImage,
-                          icon: const Icon(Icons.upload_file_outlined),
-                          label: const Text('Upload Proof'),
-                        )
-                      else
+                      if (_proofFile != null)
                         Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             ClipRRect(
                               borderRadius: BorderRadius.circular(16),
@@ -568,6 +625,66 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                               ],
                             ),
                           ],
+                        )
+                      else if (_hasExistingProof)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: cs.primary.withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: cs.primary.withOpacity(0.25),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.attachment_outlined,
+                                    color: cs.primary,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Proof image already attached to this log.',
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed:
+                                        _submitting ? null : _pickProofImage,
+                                    icon: const Icon(Icons.edit_outlined),
+                                    label: const Text('Replace'),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: _submitting ? null : _removeProof,
+                                    icon: const Icon(Icons.delete_outline),
+                                    label: const Text('Remove'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        )
+                      else
+                        OutlinedButton.icon(
+                          onPressed: _submitting ? null : _pickProofImage,
+                          icon: const Icon(Icons.add_a_photo_outlined),
+                          label: const Text('Add Proof Photo'),
                         ),
                     ],
                   ),

@@ -6,8 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'about_screen.dart';
 import 'dashboard.dart';
 import 'feedback_screen.dart';
-import 'history_screen.dart';
-import 'log_accomplishment_screen.dart';
+import 'submission_history_screen.dart';
 import 'login.dart';
 import 'my_duties_screen.dart';
 import 'settings_screen.dart';
@@ -52,27 +51,26 @@ class _MainShellState extends State<MainShell> {
         screenBuilder: () => const MyDutiesScreen(),
       ),
       _ShellMenuItem(
-        title: 'Log Accomplishment',
-        icon: Icons.edit_note_outlined,
-        screenBuilder: () => const LogAccomplishmentScreen(),
-      ),
-      _ShellMenuItem(
-        title: 'History',
+        title: 'Submission History',
         icon: Icons.history_outlined,
-        screenBuilder: () => const HistoryScreen(),
+        screenBuilder: () => SubmissionHistoryScreen(
+          taskService: _taskService,
+        ),
       ),
       _ShellMenuItem(
         title: 'Feedback',
         icon: Icons.feedback_outlined,
-        screenBuilder: () => const FeedbackScreen(),
+        screenBuilder: () => FeedbackScreen(
+          taskService: _taskService,
+        ),
       ),
       _ShellMenuItem(
         title: 'Weekly AR',
         icon: Icons.assignment_turned_in_outlined,
         screenBuilder: () => WeeklyARScreen(
-            taskService: _taskService,
-        ),      
+          taskService: _taskService,
         ),
+      ),
       _ShellMenuItem(
         title: 'Settings',
         icon: Icons.settings_outlined,
@@ -136,10 +134,20 @@ class _MainShellState extends State<MainShell> {
   String _resolveSection() {
     if (_user == null) return 'Assigned Section';
 
-    final section = _user!['section']?.toString().trim() ??
-        _user!['section_name']?.toString().trim() ??
-        _user!['assigned_section']?.toString().trim() ??
-        '';
+    final sectionValue = _user!['section'];
+    String section = '';
+
+    if (sectionValue is Map) {
+      section = sectionValue['name']?.toString().trim() ?? '';
+    } else if (sectionValue != null) {
+      section = sectionValue.toString().trim();
+    }
+
+    if (section.isEmpty) {
+      section = _user!['section_name']?.toString().trim() ??
+          _user!['assigned_section']?.toString().trim() ??
+          '';
+    }
 
     return section.isNotEmpty ? section : 'Assigned Section';
   }
@@ -163,12 +171,27 @@ class _MainShellState extends State<MainShell> {
 
   Future<void> _clearLocalAuth() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Current keys used by the mobile app.
     await prefs.remove('auth_token');
     await prefs.remove('auth_user');
+
+    // Safety cleanup for older/alternate keys that may have been used before.
+    await prefs.remove('token');
+    await prefs.remove('user');
+    await prefs.remove('user_data');
+    await prefs.remove('current_user');
+    await prefs.remove('access_token');
+    await prefs.remove('bearer_token');
   }
 
   Future<void> _logout() async {
     if (_loggingOut) return;
+
+    // Close the drawer first so the confirmation dialog appears cleanly.
+    if (Scaffold.maybeOf(context)?.isDrawerOpen ?? false) {
+      Navigator.of(context).pop();
+    }
 
     final shouldLogout = await showDialog<bool>(
       context: context,
@@ -194,7 +217,7 @@ class _MainShellState extends State<MainShell> {
 
     try {
       try {
-        await _apiClient.post('/auth/logout', {});
+        await _apiClient.post('/mobile/logout', {});
       } catch (_) {
         // Continue local logout even if API logout fails.
       }

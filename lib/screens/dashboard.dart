@@ -5,9 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task.dart';
 import '../services/task_service.dart';
 import 'feedback_screen.dart';
-import 'log_accomplishment_screen.dart';
 import 'my_duties_screen.dart';
 import 'weekly_ar_screen.dart';
+import 'submission_history_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final TaskService taskService;
@@ -34,6 +34,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _returnedCount = 0;
   int _verifiedCount = 0;
   int _totalLogs = 0;
+  String _weeklyReportStatus = 'draft';
 
   String _userName = 'Library Staff';
   String _userRole = 'Library Staff';
@@ -142,6 +143,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       }
 
+      String weeklyStatus = 'draft';
+      try {
+        final weeklyRes =
+            await widget.taskService.apiClient.get('/mobile/weekly-report');
+
+        if (weeklyRes.statusCode == 200) {
+          final weeklyDecoded = jsonDecode(weeklyRes.body);
+          weeklyStatus = _extractWeeklyStatus(weeklyDecoded);
+        }
+      } catch (_) {
+        weeklyStatus = 'draft';
+      }
+
       final mappedLogs = logs
           .whereType<Map>()
           .map((e) => _mapLogToTask(Map<String, dynamic>.from(e)))
@@ -156,6 +170,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _returnedCount = _toInt(dashboardDecoded['returned_count']);
         _verifiedCount = _toInt(dashboardDecoded['verified_count']);
         _totalLogs = _toInt(dashboardDecoded['total_logs']);
+        _weeklyReportStatus = weeklyStatus;
 
         _entries = mappedLogs;
       });
@@ -278,9 +293,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  String _extractWeeklyStatus(dynamic decoded) {
+    dynamic data = decoded;
+
+    if (decoded is Map<String, dynamic>) {
+      data = decoded['data'] ?? decoded['submission'] ?? decoded['weekly_report'] ?? decoded;
+    }
+
+    if (data is Map<String, dynamic>) {
+      final status = data['status']?.toString().trim().toLowerCase();
+      if (status != null && status.isNotEmpty) return status;
+    }
+
+    return 'draft';
+  }
+
+  String _weeklyStatusLabel() {
+    switch (_weeklyReportStatus.toLowerCase()) {
+      case 'submitted':
+        return 'Submitted AR';
+      case 'reviewed':
+        return 'Reviewed AR';
+      case 'returned':
+        return 'Returned AR';
+      case 'verified':
+        return 'Verified AR';
+      case 'draft':
+      default:
+        return 'Current Week';
+    }
+  }
+
+  String _weeklyActionLabel() {
+    switch (_weeklyReportStatus.toLowerCase()) {
+      case 'returned':
+        return 'Revise AR';
+      case 'submitted':
+        return 'Waiting for review';
+      case 'reviewed':
+        return 'Reviewed by Unit Head';
+      case 'verified':
+        return 'Verified by Head Librarian';
+      case 'draft':
+      default:
+        return 'Review and submit your AR';
+    }
+  }
+
+  Color _weeklyBaseColor(BuildContext context) {
+    switch (_weeklyReportStatus.toLowerCase()) {
+      case 'submitted':
+        return Colors.blue;
+      case 'reviewed':
+        return Colors.teal;
+      case 'returned':
+        return Colors.orange;
+      case 'verified':
+        return Colors.green;
+      case 'draft':
+      default:
+        return Theme.of(context).colorScheme.primary;
+    }
+  }
+
   Widget _buildWeeklyReportCard(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final baseColor = _weeklyBaseColor(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return InkWell(
       onTap: () {
@@ -289,28 +369,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
           MaterialPageRoute(
             builder: (_) => WeeklyARScreen(taskService: widget.taskService),
           ),
-        );
+        ).then((_) => _loadDashboard());
       },
       borderRadius: BorderRadius.circular(18),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: cs.surface,
+          color: baseColor.withOpacity(isDark ? 0.20 : 0.10),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: cs.outlineVariant.withOpacity(0.35)),
+          border: Border.all(color: baseColor.withOpacity(0.35)),
+          boxShadow: [
+            BoxShadow(
+              color: baseColor.withOpacity(0.08),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.calendar_today_outlined,
-                  size: 18,
-                  color: cs.onSurface,
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: baseColor.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.calendar_today_outlined,
+                    size: 19,
+                    color: baseColor,
+                  ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'Weekly Accomplishment Report',
@@ -335,38 +430,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: cs.surfaceVariant,
+                    color: baseColor.withOpacity(0.16),
                     borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: baseColor.withOpacity(0.24)),
                   ),
                   child: Text(
-                    'Current Week',
+                    _weeklyStatusLabel(),
                     style: theme.textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w800,
+                      color: baseColor,
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Review and submit your AR',
+                    _weeklyActionLabel(),
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
+                      color: baseColor,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                'Review and Submit',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: cs.primary,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
             ),
           ],
         ),
@@ -670,13 +756,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             _buildQuickAction(
               context: context,
-              icon: Icons.edit_note_outlined,
-              label: 'Log Accomplishment',
+              icon: Icons.history_outlined,
+              label: 'Submission History',
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const LogAccomplishmentScreen(),
+                    builder: (_) => SubmissionHistoryScreen(
+                      taskService: widget.taskService,
+                    ),
                   ),
                 );
               },
