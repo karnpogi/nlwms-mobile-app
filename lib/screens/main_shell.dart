@@ -164,6 +164,110 @@ class _MainShellState extends State<MainShell> {
     return (parts.first[0] + parts.last[0]).toUpperCase();
   }
 
+  String _resolveAvatarUrl() {
+    if (_user == null) return '';
+
+    final avatarUrl = _user!['avatar_url']?.toString().trim() ?? '';
+    if (avatarUrl.isNotEmpty) return avatarUrl;
+
+    final avatar = _user!['avatar']?.toString().trim() ?? '';
+    return avatar;
+  }
+
+  void _showAvatarPreview() {
+    final avatarUrl = _resolveAvatarUrl();
+    final displayName = _resolveName();
+    final initials = _initialsFromName(displayName);
+
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        final theme = Theme.of(context);
+        final cs = theme.colorScheme;
+
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 82,
+                  backgroundColor: cs.primary.withOpacity(0.12),
+                  foregroundImage: avatarUrl.isNotEmpty
+                      ? NetworkImage(avatarUrl)
+                      : null,
+                  child: avatarUrl.isEmpty
+                      ? Text(
+                          initials,
+                          style: theme.textTheme.displaySmall?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            color: cs.primary,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  displayName,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Profile Picture Preview',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildUserAvatar({double radius = 30}) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final displayName = _resolveName();
+    final initials = _initialsFromName(displayName);
+    final avatarUrl = _resolveAvatarUrl();
+
+    return InkWell(
+      onTap: _showAvatarPreview,
+      customBorder: const CircleBorder(),
+      child: CircleAvatar(
+        radius: radius,
+        backgroundColor: cs.primary.withOpacity(0.12),
+        foregroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+        child: avatarUrl.isEmpty
+            ? Text(
+                initials,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: cs.primary,
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+
   void _selectIndex(int index) {
     Navigator.of(context).pop();
     setState(() => _selectedIndex = index);
@@ -244,8 +348,6 @@ class _MainShellState extends State<MainShell> {
     final displayName = _resolveName();
     final displayRole = _resolveRole();
     final displaySection = _resolveSection();
-    final initials = _initialsFromName(displayName);
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 18),
@@ -262,17 +364,7 @@ class _MainShellState extends State<MainShell> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundColor: cs.primary.withOpacity(0.12),
-            child: Text(
-              initials,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: cs.primary,
-              ),
-            ),
-          ),
+          _buildUserAvatar(radius: 30),
           const SizedBox(height: 14),
           Text(
             displayName,

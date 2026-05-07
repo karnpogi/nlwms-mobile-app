@@ -105,6 +105,119 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return section.isNotEmpty ? section : 'Assigned Section';
   }
 
+  String _resolveAvatarUrl(Map<String, dynamic> user) {
+    final avatarUrl = user['avatar_url']?.toString().trim() ?? '';
+    if (avatarUrl.isNotEmpty) return avatarUrl;
+
+    return user['avatar']?.toString().trim() ?? '';
+  }
+
+  String _initialsFromName(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+
+    if (parts.isEmpty) return 'LS';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return (parts.first[0] + parts.last[0]).toUpperCase();
+  }
+
+  void _showAvatarPreview(Map<String, dynamic> user) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final name = user['name']?.toString().trim().isNotEmpty == true
+        ? user['name'].toString()
+        : 'Library Staff';
+    final avatarUrl = _resolveAvatarUrl(user);
+    final initials = _initialsFromName(name);
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 82,
+                backgroundColor: cs.primary.withOpacity(0.12),
+                foregroundImage:
+                    avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                child: avatarUrl.isEmpty
+                    ? Text(
+                        initials,
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: cs.primary,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                name,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Profile Picture Preview',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsAvatar(Map<String, dynamic> user) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final name = user['name']?.toString().trim().isNotEmpty == true
+        ? user['name'].toString()
+        : 'Library Staff';
+    final avatarUrl = _resolveAvatarUrl(user);
+    final initials = _initialsFromName(name);
+
+    return InkWell(
+      onTap: () => _showAvatarPreview(user),
+      customBorder: const CircleBorder(),
+      child: CircleAvatar(
+        radius: 24,
+        backgroundColor: cs.primary.withOpacity(0.12),
+        foregroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+        child: avatarUrl.isEmpty
+            ? Text(
+                initials,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: cs.primary,
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -133,11 +246,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: cs.primary.withOpacity(0.12),
-                    child: Icon(Icons.person, color: cs.primary),
-                  ),
+                  _buildSettingsAvatar(_user!),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -188,7 +297,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   builder: (_) =>
                       ProfileSettingsScreen(apiClient: widget.apiClient),
                 ),
-              );
+              ).then((_) => _loadUser());
             },
           ),
           _SettingsTile(

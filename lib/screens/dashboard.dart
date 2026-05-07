@@ -39,6 +39,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _userName = 'Library Staff';
   String _userRole = 'Library Staff';
   String _userSection = 'Assigned Section';
+  String _userAvatarUrl = '';
 
   @override
   void initState() {
@@ -88,10 +89,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
           if (!mounted) return;
 
+          final avatarUrl = decoded['avatar_url']?.toString().trim() ??
+              decoded['avatar']?.toString().trim() ??
+              '';
+
           setState(() {
             _userName = resolvedName;
             _userRole = role.isNotEmpty ? role : 'Library Staff';
             _userSection = section.isNotEmpty ? section : 'Assigned Section';
+            _userAvatarUrl = avatarUrl;
           });
         }
       }
@@ -259,36 +265,145 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  String _initialsFromName(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+
+    if (parts.isEmpty) return 'LS';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return (parts.first[0] + parts.last[0]).toUpperCase();
+  }
+
+  void _showAvatarPreview() {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final initials = _initialsFromName(_userName);
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 82,
+                backgroundColor: cs.primary.withOpacity(0.12),
+                foregroundImage: _userAvatarUrl.isNotEmpty
+                    ? NetworkImage(_userAvatarUrl)
+                    : null,
+                child: _userAvatarUrl.isEmpty
+                    ? Text(
+                        initials,
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: cs.primary,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _userName,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Profile Picture Preview',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDashboardAvatar(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final initials = _initialsFromName(_userName);
+
+    return InkWell(
+      onTap: _showAvatarPreview,
+      customBorder: const CircleBorder(),
+      child: CircleAvatar(
+        radius: 26,
+        backgroundColor: cs.primary.withOpacity(0.12),
+        foregroundImage:
+            _userAvatarUrl.isNotEmpty ? NetworkImage(_userAvatarUrl) : null,
+        child: _userAvatarUrl.isEmpty
+            ? Text(
+                initials,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  color: cs.primary,
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+
   Widget _buildGreetingHeader(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          'Good morning,',
-          style: theme.textTheme.bodyLarge?.copyWith(
-            color: cs.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Good morning,',
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _userLoading ? 'Loading...' : _userName,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.4,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '$_userRole • $_userSection',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          _userLoading ? 'Loading...' : _userName,
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.4,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '$_userRole • $_userSection',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: cs.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
+        const SizedBox(width: 14),
+        _buildDashboardAvatar(context),
       ],
     );
   }

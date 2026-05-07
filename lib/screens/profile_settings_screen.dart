@@ -68,6 +68,71 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     return (parts.first[0] + parts.last[0]).toUpperCase();
   }
 
+  void _showAvatarPreview() {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final displayName = _nameController.text.trim().isNotEmpty
+        ? _nameController.text.trim()
+        : 'Library Staff';
+    final initials = _initialsFromName(displayName);
+    final avatarUrl = _avatarUrl.trim();
+
+    showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 82,
+                backgroundColor: cs.primary.withOpacity(0.12),
+                foregroundImage:
+                    avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                child: avatarUrl.isEmpty
+                    ? Text(
+                        initials,
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: cs.primary,
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                displayName,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Profile Picture Preview',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _setAuthUserFromResponse(String body) async {
     final decoded = jsonDecode(body);
     final user = (decoded is Map && decoded['user'] is Map)
@@ -99,7 +164,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
     try {
       final res = await widget.apiClient.postMultipart(
-        '/me/avatar',
+        '/mobile/me/avatar',
         fileField: 'avatar',
         file: File(image.path),
       );
@@ -126,7 +191,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     setState(() => _uploadingAvatar = true);
 
     try {
-      final res = await widget.apiClient.deleteAuth('/me/avatar');
+      final res = await widget.apiClient.deleteAuth('/mobile/me/avatar');
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
         await _setAuthUserFromResponse(res.body);
@@ -237,21 +302,25 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           Center(
             child: Stack(
               children: [
-                CircleAvatar(
-                  radius: 44,
-                  backgroundColor: cs.primary.withOpacity(0.15),
-                  foregroundImage: (_avatarUrl.trim().isNotEmpty)
-                      ? NetworkImage(_avatarUrl.trim())
-                      : null,
-                  child: (_avatarUrl.trim().isEmpty)
-                      ? Text(
-                          initials,
-                          style: theme.textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: cs.primary,
-                          ),
-                        )
-                      : null,
+                InkWell(
+                  onTap: _showAvatarPreview,
+                  customBorder: const CircleBorder(),
+                  child: CircleAvatar(
+                    radius: 44,
+                    backgroundColor: cs.primary.withOpacity(0.15),
+                    foregroundImage: (_avatarUrl.trim().isNotEmpty)
+                        ? NetworkImage(_avatarUrl.trim())
+                        : null,
+                    child: (_avatarUrl.trim().isEmpty)
+                        ? Text(
+                            initials,
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: cs.primary,
+                            ),
+                          )
+                        : null,
+                  ),
                 ),
                 Positioned(
                   bottom: 0,
