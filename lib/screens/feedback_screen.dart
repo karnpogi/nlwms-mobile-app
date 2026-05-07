@@ -135,9 +135,6 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                     ? (log['duty_template']['title']?.toString() ??
                         'Untitled duty')
                     : 'Untitled duty',
-                frequency: log['duty_template'] is Map
-                    ? (log['duty_template']['frequency']?.toString() ?? '—')
-                    : '—',
                 quantity: log['quantity']?.toString() ?? '0',
                 remarks: log['remarks']?.toString().trim() ?? '',
                 revisionFeedback: revisionFeedback.isNotEmpty
@@ -305,7 +302,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              '${item.dayLabel ?? 'Activity'} • $activityDate • ${item.frequency}',
+              '${item.dayLabel ?? 'Activity'} • $activityDate',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
@@ -426,7 +423,6 @@ class _ReturnedFeedbackItem {
   final String? dayLabel;
   final String? activityDate;
   final String title;
-  final String frequency;
   final String quantity;
   final String remarks;
   final String revisionFeedback;
@@ -439,7 +435,6 @@ class _ReturnedFeedbackItem {
     required this.dayLabel,
     required this.activityDate,
     required this.title,
-    required this.frequency,
     required this.quantity,
     required this.remarks,
     required this.revisionFeedback,

@@ -442,7 +442,6 @@ class _SubmissionHistoryDetailScreenState
 
   Widget _buildLogCard(Map<String, dynamic> log) {
     final title = log['duty_template']?['title']?.toString() ?? 'Untitled duty';
-    final frequency = log['duty_template']?['frequency']?.toString() ?? '—';
     final quantity = log['quantity']?.toString() ?? '0';
     final remarks = log['remarks']?.toString().trim() ?? '';
     final status = _statusLabel(log['status']);
@@ -488,8 +487,6 @@ class _SubmissionHistoryDetailScreenState
             ],
           ),
           const SizedBox(height: 6),
-          Text('Frequency: $frequency'),
-          const SizedBox(height: 4),
           Text('Qty: $quantity'),
           if (remarks.isNotEmpty) ...[
             const SizedBox(height: 4),

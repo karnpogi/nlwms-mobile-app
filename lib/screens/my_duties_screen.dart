@@ -146,10 +146,7 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
     final targetLabel = _buildTargetLabel(
       targetQuantity: targetQuantity,
       unitOfMeasure: unitOfMeasure,
-      frequency: duty['frequency']?.toString(),
     );
-
-    final frequency = _parseFrequency(duty['frequency']?.toString());
 
     final proofRequiredValue = duty['proof_required'];
     final proofRequired = proofRequiredValue == true ||
@@ -162,7 +159,6 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
       title: title,
       description: description,
       targetLabel: targetLabel,
-      frequency: frequency,
       proofRequired: proofRequired,
     );
   }
@@ -170,22 +166,13 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
   String _buildTargetLabel({
     required dynamic targetQuantity,
     required String? unitOfMeasure,
-    required String? frequency,
   }) {
     final target = targetQuantity?.toString().trim();
     final unit = unitOfMeasure?.trim();
-    final freq = frequency?.trim().toLowerCase();
 
     if (target != null && target.isNotEmpty) {
       if (unit != null && unit.isNotEmpty) {
-        if (freq != null && freq.isNotEmpty) {
-          return 'Target: $target $unit/$freq';
-        }
         return 'Target: $target $unit';
-      }
-
-      if (freq != null && freq.isNotEmpty) {
-        return 'Target: $target/$freq';
       }
 
       return 'Target: $target';
@@ -198,18 +185,6 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
     return 'Target: Not specified';
   }
 
-  DutyFrequency _parseFrequency(String? value) {
-    switch ((value ?? '').toLowerCase()) {
-      case 'weekly':
-        return DutyFrequency.weekly;
-      case 'monthly':
-        return DutyFrequency.monthly;
-      case 'daily':
-      default:
-        return DutyFrequency.daily;
-    }
-  }
-
   Future<void> _refreshPage() async {
     await Future.wait([
       _loadUserInfo(),
@@ -217,38 +192,6 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
     ]);
   }
 
-  List<DutyItem> get _dailyDuties =>
-      _duties.where((d) => d.frequency == DutyFrequency.daily).toList();
-
-  List<DutyItem> get _weeklyDuties =>
-      _duties.where((d) => d.frequency == DutyFrequency.weekly).toList();
-
-  List<DutyItem> get _monthlyDuties =>
-      _duties.where((d) => d.frequency == DutyFrequency.monthly).toList();
-
-  String _frequencyLabel(DutyFrequency frequency) {
-    switch (frequency) {
-      case DutyFrequency.daily:
-        return 'Daily';
-      case DutyFrequency.weekly:
-        return 'Weekly';
-      case DutyFrequency.monthly:
-        return 'Monthly';
-    }
-  }
-
-  Color _frequencyColor(BuildContext context, DutyFrequency frequency) {
-    final cs = Theme.of(context).colorScheme;
-
-    switch (frequency) {
-      case DutyFrequency.daily:
-        return cs.primary;
-      case DutyFrequency.weekly:
-        return Colors.deepPurple;
-      case DutyFrequency.monthly:
-        return Colors.orange;
-    }
-  }
 
   Widget _buildHeader(BuildContext context) {
     final theme = Theme.of(context);
@@ -335,7 +278,7 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
           duty: {
             'id': duty.id,
             'title': duty.title,
-            'frequency': _frequencyLabel(duty.frequency),
+            'proof_required': duty.proofRequired,
           },
         ),
       ),
@@ -356,7 +299,6 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
   Widget _buildDutyCard(BuildContext context, DutyItem duty) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final frequencyColor = _frequencyColor(context, duty.frequency);
 
     return Material(
       color: Colors.transparent,
@@ -391,14 +333,6 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
                     Icons.arrow_forward_ios_rounded,
                     size: 14,
                     color: cs.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  _buildBadge(
-                    context,
-                    label: _frequencyLabel(duty.frequency),
-                    textColor: frequencyColor,
-                    backgroundColor: frequencyColor.withOpacity(0.10),
-                    borderColor: frequencyColor.withOpacity(0.25),
                   ),
                 ],
               ),
@@ -598,20 +532,8 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
         const SizedBox(height: 18),
         _buildDutySection(
           context,
-          title: 'Daily Duties',
-          duties: _dailyDuties,
-        ),
-        const SizedBox(height: 8),
-        _buildDutySection(
-          context,
-          title: 'Weekly Duties',
-          duties: _weeklyDuties,
-        ),
-        const SizedBox(height: 8),
-        _buildDutySection(
-          context,
-          title: 'Monthly Duties',
-          duties: _monthlyDuties,
+          title: 'Assigned Duties',
+          duties: _duties,
         ),
       ],
     );
@@ -640,18 +562,11 @@ class _MyDutiesScreenState extends State<MyDutiesScreen> {
   }
 }
 
-enum DutyFrequency {
-  daily,
-  weekly,
-  monthly,
-}
-
 class DutyItem {
   final dynamic id;
   final String title;
   final String description;
   final String targetLabel;
-  final DutyFrequency frequency;
   final bool proofRequired;
 
   const DutyItem({
@@ -659,7 +574,6 @@ class DutyItem {
     required this.title,
     required this.description,
     required this.targetLabel,
-    required this.frequency,
     required this.proofRequired,
   });
 }

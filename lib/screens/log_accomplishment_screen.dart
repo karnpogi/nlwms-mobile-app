@@ -25,7 +25,6 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
   final _formKey = GlobalKey<FormState>();
 
   late final TextEditingController _dutyTitleCtrl;
-  late final TextEditingController _frequencyCtrl;
   final TextEditingController _quantityCtrl = TextEditingController();
   final TextEditingController _remarksCtrl = TextEditingController();
 
@@ -54,6 +53,22 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     return null;
   }
 
+
+  bool _toBool(dynamic value) {
+    if (value == true || value == 1 || value == '1') return true;
+    return value?.toString().toLowerCase() == 'true';
+  }
+
+  bool get _proofRequired {
+    final duty = _resolvedDuty;
+
+    return _toBool(duty?['proof_required']) ||
+        _toBool(widget.existingLog?['proof_required']) ||
+        _toBool(widget.existingLog?['duty_template']?['proof_required']);
+  }
+
+  bool get _hasAnyProof => _proofFile != null || _hasExistingProof;
+
   @override
   void initState() {
     super.initState();
@@ -64,13 +79,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
         widget.existingLog?['duty_title']?.toString() ??
         'Assigned Duty';
 
-    final frequency = duty?['frequency']?.toString() ??
-        widget.existingLog?['duty_template']?['frequency']?.toString() ??
-        widget.existingLog?['frequency']?.toString() ??
-        '';
-
     _dutyTitleCtrl = TextEditingController(text: dutyTitle);
-    _frequencyCtrl = TextEditingController(text: frequency);
 
     if (_isEditMode) {
       _quantityCtrl.text = widget.existingLog?['quantity']?.toString() ?? '';
@@ -97,7 +106,6 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
   @override
   void dispose() {
     _dutyTitleCtrl.dispose();
-    _frequencyCtrl.dispose();
     _quantityCtrl.dispose();
     _remarksCtrl.dispose();
     super.dispose();
@@ -252,6 +260,12 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     final dutyId = _resolvedDutyId();
     if (dutyId == null) {
       throw Exception('No duty selected.');
+    }
+
+    if (_proofRequired && !_hasAnyProof) {
+      throw Exception(
+        'Proof is required for this duty. Please attach a photo before submitting.',
+      );
     }
 
     final prefs = await SharedPreferences.getInstance();
@@ -432,15 +446,6 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                           prefixIcon: Icon(Icons.library_books_outlined),
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _frequencyCtrl,
-                        readOnly: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Frequency',
-                          prefixIcon: Icon(Icons.repeat_outlined),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -569,15 +574,44 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Supporting Proof',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Supporting Proof',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          if (_proofRequired)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: cs.errorContainer.withOpacity(0.45),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: cs.error.withOpacity(0.25),
+                                ),
+                              ),
+                              child: Text(
+                                'Required',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: cs.error,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Attach a photo or screenshot if required for this duty.',
+                        _proofRequired
+                            ? 'This duty requires a proof attachment before submission.'
+                            : 'Attach a photo or screenshot if needed for this duty.',
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: cs.onSurfaceVariant,
                         ),
