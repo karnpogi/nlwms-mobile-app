@@ -416,7 +416,7 @@ class _MainShellState extends State<MainShell> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'NLWMS',
+                        'NLAMS',
                         style: theme.textTheme.labelLarge?.copyWith(
                           color: cs.primary,
                           fontWeight: FontWeight.w800,
@@ -424,7 +424,7 @@ class _MainShellState extends State<MainShell> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'NEU Library Workflow Management System',
+                        'NEU Library Accomplishment Monitoring System',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: cs.onSurfaceVariant,
                           height: 1.2,

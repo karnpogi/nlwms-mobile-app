@@ -67,6 +67,48 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
         _toBool(widget.existingLog?['duty_template']?['proof_required']);
   }
 
+  num? get _targetQuantity {
+    final duty = _resolvedDuty;
+    final rawTarget = duty?['target_quantity'] ??
+        widget.existingLog?['target_quantity'] ??
+        widget.existingLog?['duty_template']?['target_quantity'];
+
+    if (rawTarget == null) return null;
+
+    final targetText = rawTarget.toString().trim();
+    if (targetText.isEmpty || targetText.toLowerCase() == 'null') {
+      return null;
+    }
+
+    final parsed = num.tryParse(targetText);
+
+    // Treat zero or negative target as no fixed target.
+    // This protects old records if blank targets were previously saved as 0.
+    if (parsed == null || parsed <= 0) return null;
+
+    return parsed;
+  }
+
+  bool get _quantityRequired => _targetQuantity != null;
+
+  String get _unitOfMeasure {
+    final duty = _resolvedDuty;
+    final rawUnit = duty?['unit_of_measure'] ??
+        widget.existingLog?['unit_of_measure'] ??
+        widget.existingLog?['duty_template']?['unit_of_measure'];
+
+    final unit = rawUnit?.toString().trim() ?? '';
+    return unit.isNotEmpty ? unit : 'item(s)';
+  }
+
+  String get _targetQuantityText {
+    final target = _targetQuantity;
+    if (target == null) return 'No fixed target for this duty.';
+
+    final targetText = target % 1 == 0 ? target.toInt().toString() : target.toString();
+    return 'Target: $targetText $_unitOfMeasure';
+  }
+
   bool get _hasAnyProof => _proofFile != null || _hasExistingProof;
 
   @override
@@ -223,10 +265,12 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
   }
 
   Map<String, dynamic> _buildPayload() {
+    final quantityText = _quantityCtrl.text.trim();
+
     return {
       'duty_template_id': _resolvedDutyId(),
       'activity_date': _formatApiDate(_activityDate),
-      'quantity': int.tryParse(_quantityCtrl.text.trim()) ?? 0,
+      'quantity': quantityText.isEmpty ? null : num.tryParse(quantityText),
       'remarks': _remarksCtrl.text.trim(),
     };
   }
@@ -521,20 +565,37 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                       TextFormField(
                         controller: _quantityCtrl,
                         enabled: !_submitting,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Quantity Completed',
-                          prefixIcon: Icon(Icons.numbers_outlined),
-                          hintText: 'Enter completed quantity',
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: _quantityRequired
+                              ? 'Quantity Completed *'
+                              : 'Quantity Completed (Optional)',
+                          prefixIcon: const Icon(Icons.numbers_outlined),
+                          hintText: _quantityRequired
+                              ? 'Enter completed quantity'
+                              : 'Enter quantity if applicable',
+                          helperText: _targetQuantityText,
                         ),
                         validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Quantity is required.';
+                          final quantityText = value?.trim() ?? '';
+
+                          if (_quantityRequired && quantityText.isEmpty) {
+                            return 'Quantity is required for this duty.';
                           }
 
-                          final parsed = int.tryParse(value.trim());
-                          if (parsed == null || parsed <= 0) {
+                          if (quantityText.isEmpty) {
+                            return null;
+                          }
+
+                          final parsed = num.tryParse(quantityText);
+                          if (parsed == null) {
                             return 'Enter a valid quantity.';
+                          }
+
+                          if (parsed <= 0) {
+                            return 'Quantity must be greater than 0.';
                           }
 
                           return null;

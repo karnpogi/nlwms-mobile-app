@@ -10,7 +10,7 @@ class AboutScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('About NLWMS'),
+        title: const Text('About NLAMS'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -27,14 +27,14 @@ class AboutScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'NLWMS',
+                  'NLAMS',
                   style: theme.textTheme.headlineSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'NEU Library Workflow Management System',
+                  'NEU Library Accomplishment Monitoring System',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: cs.onSurfaceVariant,
@@ -54,7 +54,7 @@ class AboutScreen extends StatelessWidget {
           _InfoCard(
             title: 'What this app does',
             child: Text(
-              'NLWMS is a mobile system for New Era University library staff. It helps users view assigned duties, log daily accomplishments, monitor weekly accomplishment reports, and review feedback from supervisors.',
+              'NLAMS is a mobile application for authorized New Era University Main Library staff. It helps staff record completed duties, add remarks, enter quantities when needed, attach proof when required, submit weekly accomplishment reports, and review feedback or returned entries from the Unit Head.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: cs.onSurfaceVariant,
                 height: 1.45,
@@ -68,11 +68,12 @@ class AboutScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _FeatureLine(text: 'View assigned duties'),
-                _FeatureLine(text: 'Log accomplishments and output'),
-                _FeatureLine(text: 'Review weekly accomplishment reports'),
-                _FeatureLine(text: 'Check verification and feedback updates'),
-                _FeatureLine(text: 'Manage account preferences'),
+                _FeatureLine(text: 'View assigned duties based on job title'),
+                _FeatureLine(text: 'Log completed accomplishments'),
+                _FeatureLine(text: 'Enter quantity and remarks when needed'),
+                _FeatureLine(text: 'Upload proof for duties that require it'),
+                _FeatureLine(text: 'Submit weekly accomplishment reports'),
+                _FeatureLine(text: 'View returned feedback and resubmit corrections'),
               ],
             ),
           ),
@@ -80,7 +81,7 @@ class AboutScreen extends StatelessWidget {
           _InfoCard(
             title: 'For internal use',
             child: Text(
-              'This application is intended for authorized library personnel and supports internal workflow monitoring and accomplishment reporting.',
+              'This application is intended for authorized library staff only. It does not replace the actual library work process. Staff still perform their duties in the library, while the app is used to record completed work for review, monitoring, and evaluation.',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: cs.onSurfaceVariant,
                 height: 1.45,
@@ -102,7 +103,7 @@ class AboutScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  '© 2026 NLWMS. All rights reserved.',
+                  '© 2026 NLAMS. All rights reserved.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: cs.onSurfaceVariant.withOpacity(0.75),
                   ),

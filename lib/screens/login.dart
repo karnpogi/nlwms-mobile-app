@@ -199,7 +199,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 18),
                     Text(
-                      'NLWMS',
+                      'NLAMS',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.displaySmall?.copyWith(
                         fontWeight: FontWeight.w800,
@@ -209,7 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'NEU Library Workflow Management\nSystem',
+                      'NEU Library Accomplishment \nMonitoring System',
                       textAlign: TextAlign.center,
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: textSecondary,

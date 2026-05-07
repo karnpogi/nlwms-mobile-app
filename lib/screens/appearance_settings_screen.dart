@@ -40,7 +40,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Choose how NLWMS appears on this device.',
+                'Choose how NLAMS appears on this device.',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: cs.onSurfaceVariant,
                 ),

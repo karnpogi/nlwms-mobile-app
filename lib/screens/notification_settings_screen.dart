@@ -39,7 +39,7 @@ class _NotificationSettingsScreenState
           ),
           const SizedBox(height: 8),
           Text(
-            'Choose which reminders and updates you want to receive in NLWMS.',
+            'Choose which reminders and updates you want to receive in NLAMS.',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: cs.onSurfaceVariant,
             ),

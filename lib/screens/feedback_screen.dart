@@ -8,10 +8,12 @@ import 'submission_history_screen.dart';
 
 class FeedbackScreen extends StatefulWidget {
   final TaskService? taskService;
+  final int? initialLogId;
 
   const FeedbackScreen({
     super.key,
     this.taskService,
+    this.initialLogId,
   });
 
   @override
@@ -126,6 +128,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 
             returnedItems.add(
               _ReturnedFeedbackItem(
+                logId: _toIntOrNull(log['id']),
                 submissionId: submissionId,
                 weekStart: submissionData['week_start']?.toString(),
                 weekEnd: submissionData['week_end']?.toString(),
@@ -148,7 +151,13 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
       }
 
       if (!mounted) return;
-      setState(() => _items = returnedItems);
+      final visibleItems = widget.initialLogId == null
+          ? returnedItems
+          : returnedItems
+              .where((item) => item.logId == widget.initialLogId)
+              .toList();
+
+      setState(() => _items = visibleItems);
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = e.toString());
@@ -157,6 +166,14 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+
+  int? _toIntOrNull(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
   }
 
   String _formatDateText(String? value) {
@@ -417,6 +434,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 }
 
 class _ReturnedFeedbackItem {
+  final int? logId;
   final dynamic submissionId;
   final String? weekStart;
   final String? weekEnd;
@@ -429,6 +447,7 @@ class _ReturnedFeedbackItem {
   final String status;
 
   const _ReturnedFeedbackItem({
+    required this.logId,
     required this.submissionId,
     required this.weekStart,
     required this.weekEnd,

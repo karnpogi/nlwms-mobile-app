@@ -20,14 +20,10 @@ class ProfileSettingsScreen extends StatefulWidget {
 }
 
 class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
-  final _nameController = TextEditingController();
-  final _bioController = TextEditingController();
-  final _phoneController = TextEditingController();
-
   final _picker = ImagePicker();
 
+  Map<String, dynamic>? _user;
   String _avatarUrl = '';
-  bool _saving = false;
   bool _uploadingAvatar = false;
 
   @override
@@ -36,45 +32,91 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     _loadUser();
   }
 
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _bioController.dispose();
-    _phoneController.dispose();
-    super.dispose();
-  }
-
   Future<void> _loadUser() async {
     final prefs = await SharedPreferences.getInstance();
     final stored = prefs.getString('auth_user');
     if (stored == null) return;
 
-    final user = jsonDecode(stored) as Map<String, dynamic>;
+    final decoded = jsonDecode(stored);
 
-    setState(() {
-      _nameController.text = (user['name'] ?? '').toString();
-      _bioController.text = (user['bio'] ?? '').toString();
-      _phoneController.text = (user['phone'] ?? '').toString();
+    if (decoded is Map) {
+      final user = decoded.cast<String, dynamic>();
 
-      // Backend-backed avatar
-      _avatarUrl = (user['avatar_url'] ?? '').toString();
-    });
+      setState(() {
+        _user = user;
+        _avatarUrl = _resolveAvatarUrl(user);
+      });
+    }
+  }
+
+  String _displayName() {
+    final name = _user?['name']?.toString().trim() ?? '';
+    return name.isNotEmpty ? name : 'Library Staff';
+  }
+
+  String _displayEmail() {
+    final email = _user?['email']?.toString().trim() ?? '';
+    return email.isNotEmpty ? email : 'No email available';
+  }
+
+  String _resolveRole(Map<String, dynamic>? user) {
+    if (user == null) return 'Library Staff';
+
+    final role = user['role']?.toString().trim() ??
+        user['user_role']?.toString().trim() ??
+        '';
+
+    return role.isNotEmpty ? role : 'Library Staff';
+  }
+
+  String _resolveSection(Map<String, dynamic>? user) {
+    if (user == null) return 'Assigned Section';
+
+    final sectionValue = user['section'];
+    String section = '';
+
+    if (sectionValue is Map) {
+      section = sectionValue['name']?.toString().trim() ?? '';
+    } else if (sectionValue != null) {
+      section = sectionValue.toString().trim();
+    }
+
+    if (section.isEmpty) {
+      section = user['section_name']?.toString().trim() ??
+          user['assigned_section']?.toString().trim() ??
+          '';
+    }
+
+    return section.isNotEmpty ? section : 'Assigned Section';
+  }
+
+  String _resolveAvatarUrl(Map<String, dynamic>? user) {
+    if (user == null) return '';
+
+    final avatarUrl = user['avatar_url']?.toString().trim() ?? '';
+    if (avatarUrl.isNotEmpty) return avatarUrl;
+
+    return user['avatar']?.toString().trim() ?? '';
   }
 
   String _initialsFromName(String name) {
-    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-    if (parts.isEmpty) return 'U';
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+
+    if (parts.isEmpty) return 'LS';
     if (parts.length == 1) return parts.first[0].toUpperCase();
+
     return (parts.first[0] + parts.last[0]).toUpperCase();
   }
 
   void _showAvatarPreview() {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final displayName = _nameController.text.trim().isNotEmpty
-        ? _nameController.text.trim()
-        : 'Library Staff';
-    final initials = _initialsFromName(displayName);
+    final name = _displayName();
+    final initials = _initialsFromName(name);
     final avatarUrl = _avatarUrl.trim();
 
     showDialog<void>(
@@ -105,7 +147,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                displayName,
+                name,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.w800,
@@ -113,7 +155,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Profile Picture Preview',
+                'Profile Photo Preview',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: cs.onSurfaceVariant,
                 ),
@@ -145,11 +187,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     await prefs.setString('auth_user', jsonEncode(user));
 
     if (!mounted) return;
+
     setState(() {
-      _nameController.text = (user['name'] ?? _nameController.text).toString();
-      _bioController.text = (user['bio'] ?? _bioController.text).toString();
-      _phoneController.text = (user['phone'] ?? _phoneController.text).toString();
-      _avatarUrl = (user['avatar_url'] ?? '').toString();
+      _user = user;
+      _avatarUrl = _resolveAvatarUrl(user);
     });
   }
 
@@ -158,6 +199,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       source: source,
       imageQuality: 85,
     );
+
     if (image == null) return;
 
     setState(() => _uploadingAvatar = true);
@@ -173,15 +215,23 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         await _setAuthUserFromResponse(res.body);
 
         if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile photo updated')),
         );
       } else {
         if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Upload failed (${res.statusCode})')),
         );
       }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload failed: $e')),
+      );
     } finally {
       if (mounted) setState(() => _uploadingAvatar = false);
     }
@@ -197,15 +247,23 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         await _setAuthUserFromResponse(res.body);
 
         if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Profile photo removed')),
         );
       } else {
         if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Remove failed (${res.statusCode})')),
         );
       }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Remove failed: $e')),
+      );
     } finally {
       if (mounted) setState(() => _uploadingAvatar = false);
     }
@@ -214,69 +272,149 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   void _showAvatarOptions() {
     showModalBottomSheet(
       context: context,
+      showDragHandle: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (_) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.camera_alt),
-                title: const Text('Take photo'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickAndUpload(ImageSource.camera);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Choose from gallery'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickAndUpload(ImageSource.gallery);
-                },
-              ),
-              if (_avatarUrl.trim().isNotEmpty)
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 ListTile(
-                  leading: const Icon(Icons.delete_outline),
-                  title: const Text('Remove photo'),
+                  leading: const Icon(Icons.camera_alt_outlined),
+                  title: const Text('Take photo'),
+                  subtitle: const Text('Use camera to capture a new photo'),
                   onTap: () {
                     Navigator.pop(context);
-                    _removeAvatar();
+                    _pickAndUpload(ImageSource.camera);
                   },
                 ),
-            ],
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Choose from gallery'),
+                  subtitle: const Text('Select an existing image'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _pickAndUpload(ImageSource.gallery);
+                  },
+                ),
+                if (_avatarUrl.trim().isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.delete_outline),
+                    title: const Text('Remove photo'),
+                    subtitle: const Text('Use initials instead of a photo'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _removeAvatar();
+                    },
+                  ),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  // Keep your current local-save behavior for profile info (until API exists)
-  Future<void> _saveProfile() async {
-    setState(() => _saving = true);
+  Widget _infoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final stored = prefs.getString('auth_user');
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: cs.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
-      if (stored != null) {
-        final user = (jsonDecode(stored) as Map).cast<String, dynamic>();
-        user['name'] = _nameController.text.trim();
-        user['bio'] = _bioController.text.trim();
-        user['phone'] = _phoneController.text.trim();
-        await prefs.setString('auth_user', jsonEncode(user));
-      }
+  Widget _accountInfoCard() {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saved locally')),
-      );
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: cs.surfaceVariant.withOpacity(
+          theme.brightness == Brightness.dark ? 0.35 : 0.6,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: cs.outlineVariant.withOpacity(0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Account Information',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'These details are managed by the administrator.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 18),
+          _infoRow(
+            icon: Icons.person_outline,
+            label: 'Name',
+            value: _displayName(),
+          ),
+          const SizedBox(height: 14),
+          _infoRow(
+            icon: Icons.email_outlined,
+            label: 'Email',
+            value: _displayEmail(),
+          ),
+          const SizedBox(height: 14),
+          _infoRow(
+            icon: Icons.badge_outlined,
+            label: 'Role',
+            value: _resolveRole(_user),
+          ),
+          const SizedBox(height: 14),
+          _infoRow(
+            icon: Icons.apartment_outlined,
+            label: 'Section',
+            value: _resolveSection(_user),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -284,15 +422,12 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
 
-    final fieldFill = cs.surfaceVariant.withOpacity(
-      theme.brightness == Brightness.dark ? 0.35 : 0.6,
-    );
-
-    final initials = _initialsFromName(_nameController.text);
+    final name = _displayName();
+    final initials = _initialsFromName(name);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Profile"),
+        title: const Text('Profile Photo'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -300,109 +435,83 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           Center(
-            child: Stack(
+            child: Column(
               children: [
-                InkWell(
-                  onTap: _showAvatarPreview,
-                  customBorder: const CircleBorder(),
-                  child: CircleAvatar(
-                    radius: 44,
-                    backgroundColor: cs.primary.withOpacity(0.15),
-                    foregroundImage: (_avatarUrl.trim().isNotEmpty)
-                        ? NetworkImage(_avatarUrl.trim())
-                        : null,
-                    child: (_avatarUrl.trim().isEmpty)
-                        ? Text(
-                            initials,
-                            style: theme.textTheme.headlineMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: cs.primary,
-                            ),
-                          )
-                        : null,
-                  ),
-                ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Material(
-                    color: cs.primary,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      onTap: _uploadingAvatar ? null : _showAvatarOptions,
+                Stack(
+                  children: [
+                    InkWell(
+                      onTap: _showAvatarPreview,
                       customBorder: const CircleBorder(),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: _uploadingAvatar
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: cs.onPrimary,
+                      child: CircleAvatar(
+                        radius: 54,
+                        backgroundColor: cs.primary.withOpacity(0.15),
+                        foregroundImage: (_avatarUrl.trim().isNotEmpty)
+                            ? NetworkImage(_avatarUrl.trim())
+                            : null,
+                        child: (_avatarUrl.trim().isEmpty)
+                            ? Text(
+                                initials,
+                                style: theme.textTheme.headlineMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: cs.primary,
                                 ),
                               )
-                            : Icon(Icons.edit, color: cs.onPrimary, size: 18),
+                            : null,
                       ),
                     ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Material(
+                        color: cs.primary,
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          onTap: _uploadingAvatar ? null : _showAvatarOptions,
+                          customBorder: const CircleBorder(),
+                          child: Padding(
+                            padding: const EdgeInsets.all(9),
+                            child: _uploadingAvatar
+                                ? SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: cs.onPrimary,
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.edit,
+                                    color: cs.onPrimary,
+                                    size: 19,
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  name,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Tap the pencil icon to update your photo',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
                   ),
                 ),
               ],
             ),
           ),
-
-          const SizedBox(height: 24),
-
-          TextField(
-            controller: _nameController,
-            decoration: _input("Display name", fieldFill, cs),
-          ),
-          const SizedBox(height: 12),
-
-          TextField(
-            controller: _bioController,
-            maxLines: 3,
-            decoration: _input("Bio (optional)", fieldFill, cs),
-          ),
-          const SizedBox(height: 12),
-
-          TextField(
-            controller: _phoneController,
-            keyboardType: TextInputType.phone,
-            decoration: _input("Phone (optional)", fieldFill, cs),
-          ),
-
           const SizedBox(height: 28),
-
-          ElevatedButton(
-            onPressed: _saving ? null : _saveProfile,
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text("Save Changes"),
-          ),
+          _accountInfoCard(),
         ],
-      ),
-    );
-  }
-
-  InputDecoration _input(String label, Color fill, ColorScheme cs) {
-    return InputDecoration(
-      labelText: label,
-      filled: true,
-      fillColor: fill,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: cs.outlineVariant.withOpacity(0.25)),
       ),
     );
   }

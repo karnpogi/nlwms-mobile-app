@@ -7,7 +7,6 @@ import 'login.dart';
 
 import 'about_screen.dart';
 import 'profile_settings_screen.dart';
-import 'notification_settings_screen.dart';
 import 'appearance_settings_screen.dart';
 import 'change_password_screen.dart';
 
@@ -288,8 +287,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SectionTitle(title: "Account"),
           _SettingsTile(
             icon: Icons.person_outline,
-            title: "Profile",
-            subtitle: "Update profile information",
+            title: "Profile Picture",
+            subtitle: "Update profile picture",
             onTap: () {
               Navigator.push(
                 context,
@@ -330,24 +329,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             },
           ),
-          _SettingsTile(
-            icon: Icons.notifications_none,
-            title: "Notifications",
-            subtitle: "Reminders, feedback, and status alerts",
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const NotificationSettingsScreen(),
-                ),
-              );
-            },
-          ),
+      
 
           _SectionTitle(title: "About"),
           _SettingsTile(
             icon: Icons.info_outline,
-            title: "About NLWMS",
+            title: "About NLAMS",
             subtitle: "App version and system information",
             onTap: () {
               Navigator.push(

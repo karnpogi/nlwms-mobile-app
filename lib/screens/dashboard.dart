@@ -196,7 +196,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       id: _toInt(log['id']),
       userId: null,
       title: log['duty_title']?.toString() ?? 'Untitled Log',
-      description: log['remarks']?.toString(),
+      description: (log['revision_feedback']?.toString().trim().isNotEmpty == true)
+          ? log['revision_feedback']?.toString()
+          : (log['feedback']?.toString().trim().isNotEmpty == true)
+              ? log['feedback']?.toString()
+              : log['remarks']?.toString(),
       status: log['status']?.toString().toLowerCase() ?? 'draft',
       priority: null,
       coverColor: null,
@@ -213,7 +217,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return int.tryParse(value.toString()) ?? 0;
   }
 
-  List<Task> get _recentFeedbackEntries => _entries.take(2).toList();
+  List<Task> get _recentFeedbackEntries {
+    return _entries
+        .where((entry) => entry.status.toLowerCase() == 'returned')
+        .take(2)
+        .toList();
+  }
 
   String _formatDate(DateTime date) {
     const months = [
@@ -688,7 +697,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => const FeedbackScreen(),
+            builder: (_) => FeedbackScreen(
+              taskService: widget.taskService,
+              initialLogId: entry.id,
+            ),
           ),
         );
       },
@@ -907,7 +919,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const FeedbackScreen(),
+                    builder: (_) => FeedbackScreen(
+                      taskService: widget.taskService,
+                    ),
                   ),
                 );
               },

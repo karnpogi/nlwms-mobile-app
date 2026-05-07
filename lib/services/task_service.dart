@@ -9,7 +9,7 @@ class TaskService {
 
   TaskService({required this.apiClient});
 
-  /// NLWMS mobile dashboard/history now reads from accomplishment logs.
+  /// NLAMS mobile dashboard/history now reads from accomplishment logs.
   Future<List<Task>> getTasks() async {
     final http.Response res = await apiClient.get('/mobile/logs');
 
@@ -41,7 +41,7 @@ class TaskService {
     return const [];
   }
 
-  /// NLWMS single record now reads from accomplishment log details.
+  /// NLAMS single record now reads from accomplishment log details.
   Future<Task> getTask(int id) async {
     final http.Response res = await apiClient.get('/mobile/logs/$id');
 
@@ -57,48 +57,48 @@ class TaskService {
     return _taskFromResponse(decoded);
   }
 
-  /// Old task-status updating does not belong to the current NLWMS mobile flow.
+  /// Old task-status updating does not belong to the current NLAMS mobile flow.
   Future<Task> updateTaskStatus(int id, String status) async {
     throw UnsupportedError(
-      'updateTaskStatus is from the old task app and is not supported in the current NLWMS mobile API.',
+      'updateTaskStatus is from the old task app and is not supported in the current NLAMS mobile API.',
     );
   }
 
-  /// Old task editing does not belong to the current NLWMS mobile flow.
+  /// Old task editing does not belong to the current NLAMS mobile flow.
   Future<Task> updateTask(Task task) async {
     throw UnsupportedError(
-      'updateTask is from the old task app and is not supported in the current NLWMS mobile API.',
+      'updateTask is from the old task app and is not supported in the current NLAMS mobile API.',
     );
   }
 
-  /// Old task comment logic does not belong to the current NLWMS mobile flow.
+  /// Old task comment logic does not belong to the current NLAMS mobile flow.
   Future<Task> addComment({
     required int taskId,
     required String text,
   }) async {
     throw UnsupportedError(
-      'addComment is from the old task app and is not supported in the current NLWMS mobile API.',
+      'addComment is from the old task app and is not supported in the current NLAMS mobile API.',
     );
   }
 
-  /// Old task comment logic does not belong to the current NLWMS mobile flow.
+  /// Old task comment logic does not belong to the current NLAMS mobile flow.
   Future<Task> updateComment({
     required int taskId,
     required int commentId,
     required String text,
   }) async {
     throw UnsupportedError(
-      'updateComment is from the old task app and is not supported in the current NLWMS mobile API.',
+      'updateComment is from the old task app and is not supported in the current NLAMS mobile API.',
     );
   }
 
-  /// Old task comment logic does not belong to the current NLWMS mobile flow.
+  /// Old task comment logic does not belong to the current NLAMS mobile flow.
   Future<Task> deleteComment({
     required int taskId,
     required int commentId,
   }) async {
     throw UnsupportedError(
-      'deleteComment is from the old task app and is not supported in the current NLWMS mobile API.',
+      'deleteComment is from the old task app and is not supported in the current NLAMS mobile API.',
     );
   }
 

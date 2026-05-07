@@ -17,13 +17,13 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final token = prefs.getString('auth_token');
 
-  runApp(NlwmsApp(initialToken: token));
+  runApp(NlamsApp(initialToken: token));
 }
 
-class NlwmsApp extends StatelessWidget {
+class NlamsApp extends StatelessWidget {
   final String? initialToken;
 
-  const NlwmsApp({
+  const NlamsApp({
     super.key,
     required this.initialToken,
   });
@@ -37,7 +37,7 @@ class NlwmsApp extends StatelessWidget {
       valueListenable: themeController.themeMode,
       builder: (context, mode, _) {
         return MaterialApp(
-          title: 'NLWMS',
+          title: 'NLAMS',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
