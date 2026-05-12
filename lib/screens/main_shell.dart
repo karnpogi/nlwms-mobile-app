@@ -8,7 +8,7 @@ import 'dashboard.dart';
 import 'feedback_screen.dart';
 import 'submission_history_screen.dart';
 import 'login.dart';
-import 'my_duties_screen.dart';
+import 'log_accomplishment_screen.dart';
 import 'settings_screen.dart';
 import 'weekly_ar_screen.dart';
 
@@ -46,27 +46,27 @@ class _MainShellState extends State<MainShell> {
         screenBuilder: () => DashboardScreen(taskService: _taskService),
       ),
       _ShellMenuItem(
-        title: 'My Duties',
-        icon: Icons.assignment_outlined,
-        screenBuilder: () => const MyDutiesScreen(),
+        title: 'Log Accomplishment',
+        icon: Icons.add_task_outlined,
+        screenBuilder: () => const LogAccomplishmentScreen(),
       ),
       _ShellMenuItem(
-        title: 'Submission History',
+        title: 'History / Records',
         icon: Icons.history_outlined,
         screenBuilder: () => SubmissionHistoryScreen(
           taskService: _taskService,
         ),
       ),
       _ShellMenuItem(
-        title: 'Feedback',
-        icon: Icons.feedback_outlined,
+        title: 'Returned Logs',
+        icon: Icons.assignment_return_outlined,
         screenBuilder: () => FeedbackScreen(
           taskService: _taskService,
         ),
       ),
       _ShellMenuItem(
-        title: 'Weekly AR',
-        icon: Icons.assignment_turned_in_outlined,
+        title: 'Weekly Summary',
+        icon: Icons.summarize_outlined,
         screenBuilder: () => WeeklyARScreen(
           taskService: _taskService,
         ),

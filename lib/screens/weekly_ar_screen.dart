@@ -275,7 +275,7 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
   }
 
   Widget _buildFeedbackCard() {
-    // General Weekly AR feedback is intentionally hidden on mobile.
+    // General weekly summary feedback is intentionally hidden on mobile.
     // Staff-facing correction notes are shown inside each specific returned log card.
     return const SizedBox.shrink();
   }
@@ -450,22 +450,26 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
   }
 
   Widget _buildSubmitButton() {
-    if (!_canSubmit) {
-      return const SizedBox.shrink();
-    }
-
-    return SizedBox(
+    return Container(
       width: double.infinity,
-      height: 50,
-      child: ElevatedButton(
-        onPressed: _isSubmitting ? null : _submitWeeklyAR,
-        child: _isSubmitting
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Text(_isReturned ? 'Resubmit Weekly AR' : 'Submit Weekly AR'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.blue.withOpacity(0.18)),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, color: Colors.blue),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Weekly summaries are generated automatically from submitted accomplishment logs. No weekly submission is required.',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -476,10 +480,10 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Weekly AR'),
+        title: const Text('Weekly Summary'),
         actions: [
           IconButton(
-            tooltip: 'Submission History',
+            tooltip: 'History / Records',
             icon: const Icon(Icons.history_outlined),
             onPressed: () {
               Navigator.push(
@@ -502,12 +506,12 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   Text(
-                    'Weekly Accomplishment Report',
+                    'Weekly Summary',
                     style: theme.textTheme.titleLarge,
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Compile and submit your weekly accomplishment entries',
+                    'Review your automatically grouped accomplishment logs for the current week.',
                     style: theme.textTheme.bodyMedium,
                   ),
                   const SizedBox(height: 12),
@@ -525,7 +529,7 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                         );
                       },
                       icon: const Icon(Icons.history_outlined),
-                      label: const Text('View Submission History'),
+                      label: const Text('View History / Records'),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -605,7 +609,7 @@ class _WeeklyARScreenState extends State<WeeklyARScreen> {
                   _buildRevisionActionCard(),
                   const SizedBox(height: 16),
                   const Text(
-                    'Review flow: You → Unit Head → Head Librarian',
+                    'Review flow: Log Accomplishment → Unit Head → Head Librarian',
                     style: TextStyle(fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 16),

@@ -24,7 +24,6 @@ class LogAccomplishmentScreen extends StatefulWidget {
 class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  late final TextEditingController _dutyTitleCtrl;
   final TextEditingController _quantityCtrl = TextEditingController();
   final TextEditingController _remarksCtrl = TextEditingController();
 
@@ -37,13 +36,25 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
   bool _proofRemoved = false;
   bool _submitting = false;
 
+  bool _loadingDuties = true;
+  String? _dutiesError;
+  List<Map<String, dynamic>> _duties = [];
+  Map<String, dynamic>? _selectedDuty;
+
   final ImagePicker _picker = ImagePicker();
 
   bool get _isEditMode => widget.existingLog != null;
 
-  Map<String, dynamic>? get _resolvedDuty {
-    if (widget.duty != null) return widget.duty;
+  int? _initialDutyId() {
+    final dutyId = widget.duty?['id'] ??
+        widget.existingLog?['duty_template_id'] ??
+        widget.existingLog?['duty_template']?['id'];
 
+    if (dutyId == null) return null;
+    return int.tryParse(dutyId.toString());
+  }
+
+  Map<String, dynamic>? get _existingLogDuty {
     final dutyTemplate = widget.existingLog?['duty_template'];
 
     if (dutyTemplate is Map) {
@@ -53,6 +64,9 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     return null;
   }
 
+  Map<String, dynamic>? get _resolvedDuty {
+    return _selectedDuty ?? widget.duty ?? _existingLogDuty;
+  }
 
   bool _toBool(dynamic value) {
     if (value == true || value == 1 || value == '1') return true;
@@ -82,14 +96,12 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
 
     final parsed = num.tryParse(targetText);
 
-    // Treat zero or negative target as no fixed target.
-    // This protects old records if blank targets were previously saved as 0.
     if (parsed == null || parsed <= 0) return null;
 
     return parsed;
   }
 
-  bool get _quantityRequired => _targetQuantity != null;
+  bool get _quantityRequired => true;
 
   String get _unitOfMeasure {
     final duty = _resolvedDuty;
@@ -103,25 +115,30 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
 
   String get _targetQuantityText {
     final target = _targetQuantity;
-    if (target == null) return 'No fixed target for this duty.';
+    if (target == null) {
+      return 'Required for weighted scoring. Unit: $_unitOfMeasure';
+    }
 
     final targetText = target % 1 == 0 ? target.toInt().toString() : target.toString();
-    return 'Target: $targetText $_unitOfMeasure';
+    return 'Target: $targetText $_unitOfMeasure. Required for weighted scoring.';
   }
 
+  String get _difficultyText {
+    final raw = _resolvedDuty?['difficulty_level']?.toString().trim();
+    if (raw == null || raw.isEmpty) return 'Easy';
+    return raw[0].toUpperCase() + raw.substring(1);
+  }
+
+  String get _weightText {
+    final weight = _resolvedDuty?['weight']?.toString();
+    if (weight == null || weight.trim().isEmpty) return '1 point';
+    return '$weight point${weight == '1' ? '' : 's'}';
+  }
   bool get _hasAnyProof => _proofFile != null || _hasExistingProof;
 
   @override
   void initState() {
     super.initState();
-
-    final duty = _resolvedDuty;
-
-    final dutyTitle = duty?['title']?.toString() ??
-        widget.existingLog?['duty_title']?.toString() ??
-        'Assigned Duty';
-
-    _dutyTitleCtrl = TextEditingController(text: dutyTitle);
 
     if (_isEditMode) {
       _quantityCtrl.text = widget.existingLog?['quantity']?.toString() ?? '';
@@ -143,14 +160,90 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
         _existingProofUrl = rawProofUrl;
       }
     }
+
+    _loadAvailableDuties();
   }
 
   @override
   void dispose() {
-    _dutyTitleCtrl.dispose();
     _quantityCtrl.dispose();
     _remarksCtrl.dispose();
     super.dispose();
+  }
+
+  Future<String> _requireToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+
+    if (token == null || token.isEmpty) {
+      throw Exception('Session expired. Please log in again.');
+    }
+
+    return token;
+  }
+
+  Future<void> _loadAvailableDuties() async {
+    setState(() {
+      _loadingDuties = true;
+      _dutiesError = null;
+    });
+
+    try {
+      final token = await _requireToken();
+      final response = await http.get(
+        Uri.parse('$_baseApiUrl/mobile/duties'),
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception(_extractErrorMessage(response.body, response.statusCode));
+      }
+
+      final decoded = jsonDecode(response.body);
+      final rawData = decoded is Map<String, dynamic> ? decoded['data'] : null;
+
+      final duties = rawData is List
+          ? rawData
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+          : <Map<String, dynamic>>[];
+
+      final initialId = _initialDutyId();
+      Map<String, dynamic>? selected;
+
+      if (initialId != null) {
+        for (final duty in duties) {
+          final dutyId = int.tryParse(duty['id'].toString());
+          if (dutyId == initialId) {
+            selected = duty;
+            break;
+          }
+        }
+      }
+
+      selected ??= widget.duty;
+
+      if (!mounted) return;
+
+      setState(() {
+        _duties = duties;
+        _selectedDuty = selected;
+        _loadingDuties = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _duties = [];
+        _selectedDuty = widget.duty ?? _existingLogDuty;
+        _dutiesError = e.toString().replaceFirst('Exception: ', '');
+        _loadingDuties = false;
+      });
+    }
   }
 
   String _formatDate(DateTime date) {
@@ -272,6 +365,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
       'activity_date': _formatApiDate(_activityDate),
       'quantity': quantityText.isEmpty ? null : num.tryParse(quantityText),
       'remarks': _remarksCtrl.text.trim(),
+      'duty_template': _resolvedDuty,
     };
   }
 
@@ -303,7 +397,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
 
     final dutyId = _resolvedDutyId();
     if (dutyId == null) {
-      throw Exception('No duty selected.');
+      throw Exception('Please select a task/duty.');
     }
 
     if (_proofRequired && !_hasAnyProof) {
@@ -312,12 +406,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
       );
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
-
-    if (token == null || token.isEmpty) {
-      throw Exception('Session expired. Please log in again.');
-    }
+    final token = await _requireToken();
 
     final endpoint = _isEditMode
         ? '$_baseApiUrl/mobile/logs/${widget.existingLog!['id']}'
@@ -414,6 +503,190 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     }
   }
 
+  Widget _buildDutySelector(ThemeData theme, ColorScheme cs) {
+    if (_loadingDuties) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cs.surface.withOpacity(0.50),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: cs.outlineVariant.withOpacity(0.25)),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 12),
+            Expanded(child: Text('Loading assigned tasks...')),
+          ],
+        ),
+      );
+    }
+
+    if (_dutiesError != null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cs.errorContainer.withOpacity(0.45),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: cs.error.withOpacity(0.25)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Unable to load assigned tasks',
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: cs.error,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _dutiesError!,
+              style: theme.textTheme.bodySmall?.copyWith(color: cs.error),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _submitting ? null : _loadAvailableDuties,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_duties.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.amber.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.amber.withOpacity(0.35)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.info_outline, color: Colors.amber),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'No tasks are assigned to your job title yet. Please contact your unit head or administrator.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.amber.shade900,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final selectedId = _selectedDuty == null
+        ? null
+        : int.tryParse(_selectedDuty!['id'].toString());
+
+    final itemIds = _duties
+        .map((duty) => int.tryParse(duty['id'].toString()))
+        .whereType<int>()
+        .toSet();
+
+    final safeSelectedId = itemIds.contains(selectedId) ? selectedId : null;
+
+    return DropdownButtonFormField<int>(
+      value: safeSelectedId,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Select Task / Duty *',
+        prefixIcon: Icon(Icons.assignment_turned_in_outlined),
+      ),
+      items: _duties.map((duty) {
+        final dutyId = int.tryParse(duty['id'].toString());
+        final title = duty['title']?.toString() ?? 'Untitled Duty';
+        final jobTitle = duty['job_title']?.toString();
+
+        return DropdownMenuItem<int>(
+          value: dutyId,
+          child: Text(
+            jobTitle != null && jobTitle.trim().isNotEmpty
+                ? '$title • $jobTitle'
+                : title,
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      }).toList(),
+      onChanged: _submitting
+          ? null
+          : (value) {
+              final selected = _duties.firstWhere(
+                (duty) => int.tryParse(duty['id'].toString()) == value,
+                orElse: () => <String, dynamic>{},
+              );
+
+              setState(() {
+                _selectedDuty = selected.isEmpty ? null : selected;
+                _proofRemoved = false;
+              });
+            },
+      validator: (value) {
+        if (value == null) return 'Please select a task/duty.';
+        return null;
+      },
+    );
+  }
+
+  Widget _buildDutyMeta(ThemeData theme, ColorScheme cs) {
+    final duty = _resolvedDuty;
+    if (duty == null) return const SizedBox.shrink();
+
+    final description = duty['description']?.toString().trim() ?? '';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            Chip(
+              avatar: const Icon(Icons.stacked_bar_chart, size: 16),
+              label: Text('Weight: $_weightText'),
+            ),
+            Chip(
+              avatar: const Icon(Icons.speed_outlined, size: 16),
+              label: Text('Difficulty: $_difficultyText'),
+            ),
+            if (_proofRequired)
+              Chip(
+                avatar: const Icon(Icons.attachment_outlined, size: 16),
+                label: const Text('Proof required'),
+                backgroundColor: cs.errorContainer.withOpacity(0.50),
+              ),
+          ],
+        ),
+        if (description.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            description,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: cs.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -476,20 +749,21 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Duty Information',
+                        'Assigned Task',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 14),
-                      TextFormField(
-                        controller: _dutyTitleCtrl,
-                        readOnly: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Duty Title',
-                          prefixIcon: Icon(Icons.library_books_outlined),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Only tasks assigned to your job title are shown here.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
                         ),
                       ),
+                      const SizedBox(height: 14),
+                      _buildDutySelector(theme, cs),
+                      _buildDutyMeta(theme, cs),
                     ],
                   ),
                 ),
@@ -512,53 +786,56 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                         ),
                       ),
                       const SizedBox(height: 14),
-                      InkWell(
-                        onTap: _submitting ? null : _pickDate,
-                        borderRadius: BorderRadius.circular(14),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 14,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: cs.surface.withOpacity(
+                            theme.brightness == Brightness.dark ? 0.25 : 0.60,
                           ),
-                          decoration: BoxDecoration(
-                            color: cs.surface.withOpacity(
-                              theme.brightness == Brightness.dark ? 0.25 : 0.60,
-                            ),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: cs.outlineVariant.withOpacity(0.25),
-                            ),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: cs.outlineVariant.withOpacity(0.25),
                           ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.calendar_month_outlined),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Activity Date',
-                                      style:
-                                          theme.textTheme.labelMedium?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.today_outlined),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Activity Date',
+                                    style: theme.textTheme.labelMedium?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                      fontWeight: FontWeight.w700,
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _formatDate(_activityDate),
-                                      style:
-                                          theme.textTheme.bodyLarge?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                      ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _formatDate(_activityDate),
+                                    style: theme.textTheme.bodyLarge?.copyWith(
+                                      fontWeight: FontWeight.w700,
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _isEditMode
+                                        ? 'Date is kept from the original log and cannot be changed.'
+                                        : "Automatically uses today's date and cannot be changed.",
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const Icon(Icons.chevron_right),
-                            ],
-                          ),
+                            ),
+                            const Icon(Icons.lock_outline, size: 18),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -569,24 +846,16 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                           decimal: true,
                         ),
                         decoration: InputDecoration(
-                          labelText: _quantityRequired
-                              ? 'Quantity Completed *'
-                              : 'Quantity Completed (Optional)',
+                          labelText: 'Quantity Completed *',
                           prefixIcon: const Icon(Icons.numbers_outlined),
-                          hintText: _quantityRequired
-                              ? 'Enter completed quantity'
-                              : 'Enter quantity if applicable',
+                          hintText: 'Enter completed quantity',
                           helperText: _targetQuantityText,
                         ),
                         validator: (value) {
                           final quantityText = value?.trim() ?? '';
 
-                          if (_quantityRequired && quantityText.isEmpty) {
-                            return 'Quantity is required for this duty.';
-                          }
-
                           if (quantityText.isEmpty) {
-                            return null;
+                            return 'Quantity is required because it is used for weighted scoring.';
                           }
 
                           final parsed = num.tryParse(quantityText);
@@ -788,7 +1057,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: _submitting ? null : _submitLog,
+                    onPressed: _submitting || _loadingDuties ? null : _submitLog,
                     icon: _submitting
                         ? const SizedBox(
                             width: 18,

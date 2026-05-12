@@ -242,14 +242,14 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Returned Feedback',
+                  'Returned Logs',
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w900,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'These are accomplishment logs that were returned by your Unit Head for correction.',
+                  'These are accomplishment logs returned by your Unit Head for correction.',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: cs.onSurfaceVariant,
                     height: 1.35,
@@ -366,7 +366,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
               child: OutlinedButton.icon(
                 onPressed: () => _openSubmissionDetails(item),
                 icon: const Icon(Icons.visibility_outlined, size: 18),
-                label: const Text('View Submission Details'),
+                label: const Text('Revise / View Log'),
               ),
             ),
           ],
@@ -381,7 +381,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Feedback'),
+        title: const Text('Returned Logs'),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
@@ -393,7 +393,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 children: [
                   Text(
-                    'Returned Feedback',
+                    'Returned Logs',
                     style: theme.textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w900,
                       letterSpacing: -0.4,
@@ -401,7 +401,7 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Review the specific accomplishment logs returned for revision.',
+                    'Review accomplishment logs returned for revision.',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),

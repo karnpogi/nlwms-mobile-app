@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/task.dart';
 import '../services/task_service.dart';
 import 'feedback_screen.dart';
-import 'my_duties_screen.dart';
+import 'log_accomplishment_screen.dart';
 import 'weekly_ar_screen.dart';
 import 'submission_history_screen.dart';
 
@@ -132,7 +132,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         throw Exception('Invalid dashboard response.');
       }
 
-      // Logs are fetched only for Recent Feedback display.
+      // Logs are fetched only for Recent Returned Logs display.
       // Dashboard counters now come only from /mobile/dashboard.
       final logsRes = await widget.taskService.apiClient.get('/mobile/logs');
 
@@ -532,7 +532,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Weekly Accomplishment Report',
+                    'Weekly Summary',
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -870,13 +870,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             _buildQuickAction(
               context: context,
-              icon: Icons.library_books_outlined,
-              label: 'My Duties',
+              icon: Icons.add_task_outlined,
+              label: 'Log Accomplishment',
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const MyDutiesScreen(),
+                    builder: (_) => const LogAccomplishmentScreen(),
                   ),
                 );
               },
@@ -884,7 +884,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _buildQuickAction(
               context: context,
               icon: Icons.history_outlined,
-              label: 'Submission History',
+              label: 'History / Records',
               onTap: () {
                 Navigator.push(
                   context,
@@ -899,7 +899,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             _buildQuickAction(
               context: context,
               icon: Icons.assignment_turned_in_outlined,
-              label: 'Weekly AR',
+              label: 'Weekly Summary',
               onTap: () {
                 Navigator.push(
                   context,
@@ -913,8 +913,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             _buildQuickAction(
               context: context,
-              icon: Icons.feedback_outlined,
-              label: 'Feedback',
+              icon: Icons.assignment_return_outlined,
+              label: 'Returned Logs',
               onTap: () {
                 Navigator.push(
                   context,
@@ -929,7 +929,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
         const SizedBox(height: 18),
-        _buildSectionTitle(context, 'Recent Feedback'),
+        _buildSectionTitle(context, 'Recent Returned Logs'),
         const SizedBox(height: 10),
         if (_recentFeedbackEntries.isEmpty)
           Container(
