@@ -467,7 +467,7 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
     setState(() => _submitting = true);
 
     try {
-      final savedLog = await _saveLog();
+      await _saveLog();
 
       if (!mounted) return;
 
@@ -482,7 +482,20 @@ class _LogAccomplishmentScreenState extends State<LogAccomplishmentScreen> {
         ),
       );
 
-      Navigator.pop(context, savedLog);
+      // Do not pop after submit.
+      // This screen is also used as a main drawer page inside MainShell.
+      // Popping from there removes the shell route and causes a black screen.
+      if (!_isEditMode) {
+        setState(() {
+          _quantityCtrl.clear();
+          _remarksCtrl.clear();
+          _proofFile = null;
+          _existingProofFile = null;
+          _existingProofUrl = null;
+          _proofRemoved = false;
+          _activityDate = DateTime.now();
+        });
+      }
     } catch (e) {
       if (!mounted) return;
 

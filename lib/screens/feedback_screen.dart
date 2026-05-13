@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
 import '../services/task_service.dart';
-import 'submission_history_screen.dart';
+import 'log_accomplishment_screen.dart';
 
 class FeedbackScreen extends StatefulWidget {
   final TaskService? taskService;
@@ -40,117 +40,86 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     });
 
     try {
-      final historyResponse = await _taskService.apiClient.get(
-        '/mobile/weekly-report/history',
-      );
+      /*
+      |--------------------------------------------------------------------------
+      | Important:
+      | Use the same source as the dashboard Recent Returned Logs.
+      | The old version used weekly-report/history, which could show a different
+      | result from the dashboard because it depends on returned weekly ARs.
+      |--------------------------------------------------------------------------
+      */
+      final response = await _taskService.apiClient.get('/mobile/logs?status=returned&attached=1');
 
-      dynamic decodedHistory;
+      dynamic decoded;
       try {
-        decodedHistory = jsonDecode(historyResponse.body);
+        decoded = jsonDecode(response.body);
       } catch (_) {
-        decodedHistory = null;
+        decoded = null;
       }
 
-      if (historyResponse.statusCode != 200 ||
-          decodedHistory is! Map<String, dynamic>) {
-        throw Exception('Failed to load returned feedback.');
+      if (response.statusCode != 200 || decoded is! Map<String, dynamic>) {
+        throw Exception('Failed to load returned logs.');
       }
 
-      final rawSubmissions = decodedHistory['data'];
-      final submissions = <Map<String, dynamic>>[];
-
-      if (rawSubmissions is List) {
-        for (final item in rawSubmissions) {
-          if (item is Map) {
-            submissions.add(Map<String, dynamic>.from(item));
-          }
-        }
-      }
-
+      final rawLogs = decoded['data'];
       final returnedItems = <_ReturnedFeedbackItem>[];
 
-      for (final submission in submissions) {
-        final status = submission['status']?.toString().toLowerCase() ?? '';
+      if (rawLogs is List) {
+        for (final rawLog in rawLogs) {
+          if (rawLog is! Map) continue;
 
-        if (status != 'returned') continue;
+          final log = Map<String, dynamic>.from(rawLog);
+          final logStatus = log['status']?.toString().toLowerCase() ?? '';
+          final requiresRevision = log['requires_revision'] == true ||
+              log['requires_revision']?.toString() == '1';
 
-        final submissionId = submission['id'];
-        if (submissionId == null) continue;
+          final revisionFeedback =
+              log['revision_feedback']?.toString().trim() ?? '';
+          final fallbackFeedback = log['feedback']?.toString().trim() ?? '';
 
-        final detailResponse = await _taskService.apiClient.get(
-          '/mobile/weekly-report/history/$submissionId',
-        );
+          final shouldShow = logStatus == 'returned' ||
+              requiresRevision ||
+              revisionFeedback.isNotEmpty ||
+              fallbackFeedback.isNotEmpty;
 
-        dynamic decodedDetail;
-        try {
-          decodedDetail = jsonDecode(detailResponse.body);
-        } catch (_) {
-          decodedDetail = null;
-        }
+          if (!shouldShow) continue;
 
-        if (detailResponse.statusCode != 200 ||
-            decodedDetail is! Map<String, dynamic>) {
-          continue;
-        }
+          final activityDate = log['activity_date']?.toString();
+          final weekStart = log['week_start']?.toString() ??
+              _startOfWeekText(activityDate);
+          final weekEnd = log['week_end']?.toString() ??
+              _endOfWeekText(activityDate);
 
-        final data = decodedDetail['data'];
-        if (data is! Map) continue;
-
-        final submissionData = data['submission'] is Map
-            ? Map<String, dynamic>.from(data['submission'])
-            : submission;
-
-        final days = data['days'];
-        if (days is! List) continue;
-
-        for (final day in days) {
-          if (day is! Map) continue;
-
-          final dayMap = Map<String, dynamic>.from(day);
-          final logs = dayMap['logs'];
-          if (logs is! List) continue;
-
-          for (final rawLog in logs) {
-            if (rawLog is! Map) continue;
-
-            final log = Map<String, dynamic>.from(rawLog);
-            final logStatus = log['status']?.toString().toLowerCase() ?? '';
-            final requiresRevision = log['requires_revision'] == true ||
-                log['requires_revision']?.toString() == '1';
-            final revisionFeedback =
-                log['revision_feedback']?.toString().trim() ?? '';
-
-            final shouldShow = logStatus == 'returned' ||
-                requiresRevision ||
-                revisionFeedback.isNotEmpty;
-
-            if (!shouldShow) continue;
-
-            returnedItems.add(
-              _ReturnedFeedbackItem(
-                logId: _toIntOrNull(log['id']),
-                submissionId: submissionId,
-                weekStart: submissionData['week_start']?.toString(),
-                weekEnd: submissionData['week_end']?.toString(),
-                dayLabel: dayMap['day_label']?.toString(),
-                activityDate: log['activity_date']?.toString(),
-                title: log['duty_template'] is Map
-                    ? (log['duty_template']['title']?.toString() ??
-                        'Untitled duty')
-                    : 'Untitled duty',
-                quantity: log['quantity']?.toString() ?? '0',
-                remarks: log['remarks']?.toString().trim() ?? '',
-                revisionFeedback: revisionFeedback.isNotEmpty
-                    ? revisionFeedback
-                    : 'This accomplishment log was returned for revision.',
-                status: logStatus.isNotEmpty ? logStatus : 'returned',
-              ),
-            );
-          }
+          returnedItems.add(
+            _ReturnedFeedbackItem(
+              logId: _toIntOrNull(log['id']),
+              submissionId: log['accomplishment_submission_id'] ??
+                  log['submission_id'],
+              weekStart: weekStart,
+              weekEnd: weekEnd,
+              dayLabel: _dayLabel(activityDate),
+              activityDate: activityDate,
+              title: log['duty_template'] is Map
+                  ? (log['duty_template']['title']?.toString() ??
+                      log['duty_title']?.toString() ??
+                      'Untitled duty')
+                  : (log['duty_title']?.toString() ?? 'Untitled duty'),
+              quantity: log['quantity']?.toString() ?? '0',
+              remarks: log['remarks']?.toString().trim() ?? '',
+              revisionFeedback: revisionFeedback.isNotEmpty
+                  ? revisionFeedback
+                  : fallbackFeedback.isNotEmpty
+                      ? fallbackFeedback
+                      : 'This accomplishment log was returned for revision.',
+              status: logStatus.isNotEmpty ? logStatus : 'returned',
+              rawLog: log,
+            ),
+          );
         }
       }
 
       if (!mounted) return;
+
       final visibleItems = widget.initialLogId == null
           ? returnedItems
           : returnedItems
@@ -168,6 +137,48 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
     }
   }
 
+
+  DateTime? _parseDate(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    return DateTime.tryParse(value);
+  }
+
+  String? _startOfWeekText(String? value) {
+    final date = _parseDate(value);
+    if (date == null) return null;
+
+    final start = date.subtract(Duration(days: date.weekday - 1));
+    return '${start.year.toString().padLeft(4, '0')}-'
+        '${start.month.toString().padLeft(2, '0')}-'
+        '${start.day.toString().padLeft(2, '0')}';
+  }
+
+  String? _endOfWeekText(String? value) {
+    final date = _parseDate(value);
+    if (date == null) return null;
+
+    final end = date.add(Duration(days: 7 - date.weekday));
+    return '${end.year.toString().padLeft(4, '0')}-'
+        '${end.month.toString().padLeft(2, '0')}-'
+        '${end.day.toString().padLeft(2, '0')}';
+  }
+
+  String? _dayLabel(String? value) {
+    final date = _parseDate(value);
+    if (date == null) return null;
+
+    const days = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+
+    return days[date.weekday - 1];
+  }
 
   int? _toIntOrNull(dynamic value) {
     if (value == null) return null;
@@ -209,12 +220,11 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
   void _openSubmissionDetails(_ReturnedFeedbackItem item) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SubmissionHistoryDetailScreen(
-          taskService: _taskService,
-          submissionId: item.submissionId,
+        builder: (_) => LogAccomplishmentScreen(
+          existingLog: item.rawLog,
         ),
       ),
-    );
+    ).then((_) => _loadReturnedFeedback());
   }
 
   Widget _buildIntro(BuildContext context) {
@@ -445,6 +455,7 @@ class _ReturnedFeedbackItem {
   final String remarks;
   final String revisionFeedback;
   final String status;
+  final Map<String, dynamic> rawLog;
 
   const _ReturnedFeedbackItem({
     required this.logId,
@@ -458,5 +469,6 @@ class _ReturnedFeedbackItem {
     required this.remarks,
     required this.revisionFeedback,
     required this.status,
+    required this.rawLog,
   });
 }
